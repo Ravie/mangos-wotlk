@@ -17,12 +17,10 @@
  */
 
 #include "OutdoorPvP.h"
-#include "Language.h"
-#include "World.h"
-#include "ObjectMgr.h"
-#include "Object.h"
-#include "GameObject.h"
-#include "Player.h"
+#include "Entities/Object.h"
+#include "Entities/GameObject.h"
+#include "Entities/Player.h"
+#include "Globals/ObjectMgr.h"
 
 /**
    Function that adds a player to the players of the affected outdoor pvp zones
@@ -82,7 +80,7 @@ void OutdoorPvP::HandleGameObjectCreate(GameObject* go)
         if (itr != capturePoints->end())
             go->SetCapturePointSlider(itr->second.Value, itr->second.IsLocked);
         else
-            go->SetCapturePointSlider(CAPTURE_SLIDER_MIDDLE, false);
+            go->SetCapturePointSlider(go->GetGOInfo()->capturePoint.startingValue, false);
     }
 }
 
@@ -91,22 +89,22 @@ void OutdoorPvP::HandleGameObjectRemove(GameObject* go)
     // save capture point slider value (negative value if locked)
     if (go->GetGOInfo()->type == GAMEOBJECT_TYPE_CAPTURE_POINT)
     {
-        CapturePointSlider value(go->GetCapturePointSliderValue(), go->getLootState() != GO_ACTIVATED);
+        CapturePointSlider value(go->GetCapturePointSliderValue(), go->GetLootState() != GO_ACTIVATED);
         sOutdoorPvPMgr.SetCapturePointSlider(go->GetEntry(), value);
     }
 }
 
 /**
-   Function that handles player kills in the main outdoor pvp zones
+   Function that handles kills in the main outdoor pvp zones
 
-   @param   player who killed another player
+   @param   player who killed another unit
    @param   victim who was killed
  */
-void OutdoorPvP::HandlePlayerKill(Player* killer, Player* victim)
+void OutdoorPvP::HandlePlayerKill(Player* killer, Unit* victim)
 {
     if (Group* group = killer->GetGroup())
     {
-        for (GroupReference* itr = group->GetFirstMember(); itr != NULL; itr = itr->next())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
             Player* groupMember = itr->getSource();
 
@@ -120,34 +118,52 @@ void OutdoorPvP::HandlePlayerKill(Player* killer, Player* victim)
             // creature kills must be notified, even if not inside objective / not outdoor pvp active
             // player kills only count if active and inside objective
             if (groupMember->CanUseCapturePoint())
-                HandlePlayerKillInsideArea(groupMember);
+                HandlePlayerKillInsideArea(groupMember, victim);
         }
     }
     else
     {
         // creature kills must be notified, even if not inside objective / not outdoor pvp active
         if (killer && killer->CanUseCapturePoint())
-            HandlePlayerKillInsideArea(killer);
+            HandlePlayerKillInsideArea(killer, victim);
     }
 }
 
 // apply a team buff for the main and affected zones
-void OutdoorPvP::BuffTeam(Team team, uint32 spellId, bool remove /*= false*/)
+void OutdoorPvP::BuffTeam(Team team, uint32 spellId, bool remove /*= false*/, const uint32 areaId /*= 0*/)
 {
     for (GuidZoneMap::const_iterator itr = m_zonePlayers.begin(); itr != m_zonePlayers.end(); ++itr)
     {
         Player* player = sObjectMgr.GetPlayer(itr->first);
         if (player && player->GetTeam() == team)
         {
+            // validate area id for buffs which aren't applied to the entire zone
+            if (areaId && player->GetAreaId() != areaId)
+                continue;
+
             if (remove)
-                player->RemoveAurasDueToSpell(spellId);
+            {
+                ObjectGuid guid = player->GetObjectGuid();
+                player->GetMap()->AddMessage([guid, spellId](Map* map) -> void
+                {
+                    if (Player* player = map->GetPlayer(guid))
+                        player->RemoveAuraHolderFromStack(spellId);
+                });
+            }
             else
-                player->CastSpell(player, spellId, true);
+            {
+                ObjectGuid guid = player->GetObjectGuid();
+                player->GetMap()->AddMessage([guid, spellId](Map* map) -> void
+                {
+                    if(Player* player = map->GetPlayer(guid))
+                        player->CastSpell(player, spellId, TRIGGERED_OLD_TRIGGERED);
+                });
+            }
         }
     }
 }
 
-uint32 OutdoorPvP::GetBannerArtKit(Team team, uint32 artKitAlliance /*= CAPTURE_ARTKIT_ALLIANCE*/, uint32 artKitHorde /*= CAPTURE_ARTKIT_HORDE*/, uint32 artKitNeutral /*= CAPTURE_ARTKIT_NEUTRAL*/)
+uint32 OutdoorPvP::GetBannerArtKit(Team team, uint32 artKitAlliance /*= CAPTURE_ARTKIT_ALLIANCE*/, uint32 artKitHorde /*= CAPTURE_ARTKIT_HORDE*/, uint32 artKitNeutral /*= CAPTURE_ARTKIT_NEUTRAL*/) const
 {
     switch (team)
     {
@@ -181,7 +197,7 @@ void OutdoorPvP::RespawnGO(const WorldObject* objRef, ObjectGuid goGuid, bool re
 
         if (respawn)
             go->Refresh();
-        else if (go->isSpawned())
+        else if (go->IsSpawned())
             go->SetLootState(GO_JUST_DEACTIVATED);
     }
 }

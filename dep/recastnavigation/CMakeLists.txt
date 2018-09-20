@@ -15,5 +15,25 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
-add_subdirectory(Detour)
-#add_subdirectory(Recast)
+
+if (BUILD_GAME_SERVER OR BUILD_EXTRACTORS)
+  add_subdirectory(Detour)
+  if(MSVC)
+    set_target_properties(detour PROPERTIES FOLDER "Dependencies")
+  endif()
+  target_include_directories(detour
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Detour/Include
+  )
+endif()
+
+if (BUILD_EXTRACTORS)
+  add_subdirectory(Recast)
+  if(MSVC)
+    set_target_properties(recast PROPERTIES FOLDER "Dependencies")
+  endif()
+  target_include_directories(recast
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Recast/Include
+  )
+endif()

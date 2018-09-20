@@ -60,6 +60,13 @@ enum BG_WS_WorldStates
     BG_WS_TIME_REMAINING          = 4248
 };
 
+#define WS_NORMAL_FLAG_CAPTURE_REPUTATION           35
+#define WS_WEEKEND_FLAG_CAPTURE_REPUTATION          45
+#define WS_NORMAL_WIN_KILLS                         1
+#define WS_WEEKEND_WIN_KILLS                        3
+#define WS_NORMAL_MAP_COMPLETE_KILLS                2
+#define WS_WEEKEND_MAP_COMPLETE_KILLS               4
+
 enum BG_WS_FlagState
 {
     BG_WS_FLAG_STATE_ON_BASE      = 0,
@@ -133,12 +140,12 @@ class BattleGroundWS : public BattleGround
         virtual void EventPlayerCapturedFlag(Player* source) override;
 
         void RemovePlayer(Player* plr, ObjectGuid guid) override;
-        void HandleAreaTrigger(Player* source, uint32 trigger) override;
+        bool HandleAreaTrigger(Player* source, uint32 trigger) override;
         void HandleKillPlayer(Player* player, Player* killer) override;
         virtual void Reset() override;
         void EndBattleGround(Team winner) override;
         virtual WorldSafeLocsEntry const* GetClosestGraveYard(Player* player) override;
-        uint32 GetRemainingTimeInMinutes() { return m_EndTimer ? (m_EndTimer - 1) / (MINUTE * IN_MILLISECONDS) + 1 : 0; }
+        uint32 GetRemainingTimeInMinutes() const { return m_EndTimer ? (m_EndTimer - 1) / (MINUTE * IN_MILLISECONDS) + 1 : 0; }
 
         void UpdateFlagState(Team team, uint32 value);
         void UpdateTeamScore(Team team);
@@ -147,6 +154,7 @@ class BattleGroundWS : public BattleGround
         void ClearDroppedFlagGuid(Team team)  { m_DroppedFlagGuid[GetTeamIndexByTeamId(team)].Clear();}
         ObjectGuid const& GetDroppedFlagGuid(Team team) const { return m_DroppedFlagGuid[GetTeamIndexByTeamId(team)];}
         virtual void FillInitialWorldStates(WorldPacket& data, uint32& count) override;
+        virtual Team GetPrematureWinner() override;
 
     private:
         ObjectGuid m_flagCarrierAlliance;

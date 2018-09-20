@@ -12,10 +12,8 @@
 #include <stdio.h>
 #include <tchar.h>
 #define _NO_CVCONST_H
-#include <dbghelp.h>
 #include "WheatyExceptionReport.h"
 #include "revision.h"
-#include "revision_nr.h"
 #define CrashFolder _T("Crashes")
 //#pragma comment(linker, "/defaultlib:dbghelp.lib")
 
@@ -25,11 +23,11 @@ inline LPTSTR ErrorMessage(DWORD dw)
     FormatMessage(
         FORMAT_MESSAGE_ALLOCATE_BUFFER |
         FORMAT_MESSAGE_FROM_SYSTEM,
-        NULL,
+        nullptr,
         dw,
         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
         (LPTSTR) &lpMsgBuf,
-        0, NULL);
+        0, nullptr);
     return (LPTSTR)lpMsgBuf;
 }
 
@@ -71,7 +69,7 @@ LONG WINAPI WheatyExceptionReport::WheatyUnhandledExceptionFilter(
     PEXCEPTION_POINTERS pExceptionInfo)
 {
     TCHAR module_folder_name[MAX_PATH];
-    GetModuleFileName(0, module_folder_name, MAX_PATH);
+    GetModuleFileName(nullptr, module_folder_name, MAX_PATH);
     TCHAR* pos = _tcsrchr(module_folder_name, '\\');
     if (!pos)
         return 0;
@@ -80,7 +78,7 @@ LONG WINAPI WheatyExceptionReport::WheatyUnhandledExceptionFilter(
 
     TCHAR crash_folder_path[MAX_PATH];
     sprintf(crash_folder_path, "%s\\%s", module_folder_name, CrashFolder);
-    if (!CreateDirectory(crash_folder_path, NULL))
+    if (!CreateDirectory(crash_folder_path, nullptr))
     {
         if (GetLastError() != ERROR_ALREADY_EXISTS)
             return 0;
@@ -94,25 +92,24 @@ LONG WINAPI WheatyExceptionReport::WheatyUnhandledExceptionFilter(
     m_hReportFile = CreateFile(m_szLogFileName,
                                GENERIC_WRITE,
                                0,
-                               0,
+                               nullptr,
                                OPEN_ALWAYS,
                                FILE_FLAG_WRITE_THROUGH,
-                               0);
+                               nullptr);
 
     if (m_hReportFile)
     {
-        SetFilePointer(m_hReportFile, 0, 0, FILE_END);
+        SetFilePointer(m_hReportFile, 0, nullptr, FILE_END);
 
         GenerateExceptionReport(pExceptionInfo);
 
         CloseHandle(m_hReportFile);
-        m_hReportFile = 0;
+        m_hReportFile = nullptr;
     }
 
     if (m_previousFilter)
         return m_previousFilter(pExceptionInfo);
-    else
-        return EXCEPTION_EXECUTE_HANDLER/*EXCEPTION_CONTINUE_SEARCH*/;
+    return EXCEPTION_EXECUTE_HANDLER/*EXCEPTION_CONTINUE_SEARCH*/;
 }
 
 BOOL WheatyExceptionReport::_GetProcessorName(TCHAR* sProcessorName, DWORD maxcount)
@@ -121,14 +118,13 @@ BOOL WheatyExceptionReport::_GetProcessorName(TCHAR* sProcessorName, DWORD maxco
         return FALSE;
 
     HKEY hKey;
-    LONG lRet;
-    lRet = ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"),
-                          0, KEY_QUERY_VALUE, &hKey);
+    LONG lRet = ::RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"),
+        0, KEY_QUERY_VALUE, &hKey);
     if (lRet != ERROR_SUCCESS)
         return FALSE;
     TCHAR szTmp[2048];
     DWORD cntBytes = sizeof(szTmp);
-    lRet = ::RegQueryValueEx(hKey, _T("ProcessorNameString"), NULL, NULL,
+    lRet = ::RegQueryValueEx(hKey, _T("ProcessorNameString"), nullptr, nullptr,
                              (LPBYTE)szTmp, &cntBytes);
     if (lRet != ERROR_SUCCESS)
         return FALSE;
@@ -148,8 +144,7 @@ BOOL WheatyExceptionReport::_GetWindowsVersion(TCHAR* szVersion, DWORD cntMax)
     // If that fails, try using the OSVERSIONINFO structure.
     OSVERSIONINFOEX osvi = { 0 };
     osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    BOOL bOsVersionInfoEx;
-    bOsVersionInfoEx = ::GetVersionEx((LPOSVERSIONINFO)(&osvi));
+    BOOL bOsVersionInfoEx = ::GetVersionEx((LPOSVERSIONINFO)(&osvi));
     if (!bOsVersionInfoEx)
     {
         osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
@@ -299,7 +294,7 @@ void WheatyExceptionReport::GenerateExceptionReport(
     GetLocalTime(&systime);
 
     // Start out with a banner
-    _tprintf(_T("Revision: %s %s %s %s\r\n"), REVISION_DATE, REVISION_TIME, REVISION_NR, REVISION_ID);
+    _tprintf(_T("Revision: %s %s\r\n"), REVISION_DATE, REVISION_ID);
     _tprintf(_T("Date %u:%u:%u. Time %u:%u \r\n"), systime.wDay, systime.wMonth, systime.wYear, systime.wHour, systime.wMinute);
     PEXCEPTION_RECORD pExceptionRecord = pExceptionInfo->ExceptionRecord;
 
@@ -353,7 +348,7 @@ void WheatyExceptionReport::GenerateExceptionReport(
     _tprintf(_T("RAX:%016I64X\r\nRBX:%016I64X\r\nRCX:%016I64X\r\nRDX:%016I64X\r\nRSI:%016I64X\r\nRDI:%016I64X\r\n")
              _T("R8: %016I64X\r\nR9: %016I64X\r\nR10:%016I64X\r\nR11:%016I64X\r\nR12:%016I64X\r\nR13:%016I64X\r\nR14:%016I64X\r\nR15:%016I64X\r\n")
              , pCtx->Rax, pCtx->Rbx, pCtx->Rcx, pCtx->Rdx,
-             pCtx->Rsi, pCtx->Rdi , pCtx->R9, pCtx->R10, pCtx->R11, pCtx->R12, pCtx->R13, pCtx->R14, pCtx->R15);
+             pCtx->Rsi, pCtx->Rdi, pCtx->R9, pCtx->R10, pCtx->R11, pCtx->R12, pCtx->R13, pCtx->R14, pCtx->R15);
     _tprintf(_T("CS:RIP:%04X:%016I64X\r\n"), pCtx->SegCs, pCtx->Rip);
     _tprintf(_T("SS:RSP:%04X:%016X  RBP:%08X\r\n"),
              pCtx->SegSs, pCtx->Rsp, pCtx->Rbp);
@@ -365,7 +360,7 @@ void WheatyExceptionReport::GenerateExceptionReport(
     SymSetOptions(SYMOPT_DEFERRED_LOADS);
 
     // Initialize DbgHelp
-    if (!SymInitialize(GetCurrentProcess(), 0, TRUE))
+    if (!SymInitialize(GetCurrentProcess(), nullptr, TRUE))
     {
         _tprintf(_T("\n\rCRITICAL ERROR.\n\r Couldn't initialize the symbol handler for process.\n\rError [%s].\n\r\n\r"),
                  ErrorMessage(GetLastError()));
@@ -373,7 +368,7 @@ void WheatyExceptionReport::GenerateExceptionReport(
 
     CONTEXT trashableContext = *pCtx;
 
-    WriteStackDetails(&trashableContext, false, NULL);
+    WriteStackDetails(&trashableContext, false, nullptr);
     printTracesForAllThreads();
 
 //    #ifdef _M_IX86                                        // X86 Only!
@@ -382,14 +377,14 @@ void WheatyExceptionReport::GenerateExceptionReport(
     _tprintf(_T("Local Variables And Parameters\r\n"));
 
     trashableContext = *pCtx;
-    WriteStackDetails(&trashableContext, true, NULL);
+    WriteStackDetails(&trashableContext, true, nullptr);
 
     _tprintf(_T("========================\r\n"));
     _tprintf(_T("Global Variables\r\n"));
 
     SymEnumSymbols(GetCurrentProcess(),
                    (DWORD64)GetModuleHandle(szFaultingModule),
-                   0, EnumerateSymbolsCallback, 0);
+                   nullptr, EnumerateSymbolsCallback, nullptr);
     //  #endif                                              // X86 Only!
 
     SymCleanup(GetCurrentProcess());
@@ -438,7 +433,7 @@ LPTSTR WheatyExceptionReport::GetExceptionString(DWORD dwCode)
 
     FormatMessage(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_HMODULE,
                   GetModuleHandle(_T("NTDLL.DLL")),
-                  dwCode, 0, szBuffer, sizeof(szBuffer), 0);
+                  dwCode, 0, szBuffer, sizeof(szBuffer), nullptr);
 
     return szBuffer;
 }
@@ -549,18 +544,18 @@ void WheatyExceptionReport::WriteStackDetails(
     dwMachineType = IMAGE_FILE_MACHINE_AMD64;
 #endif
 
-    while (1)
+    while (true)
     {
         // Get the next stack frame
         if (! StackWalk64(dwMachineType,
                           m_hProcess,
-                          pThreadHandle != NULL ? pThreadHandle : GetCurrentThread(),
+                          pThreadHandle != nullptr ? pThreadHandle : GetCurrentThread(),
                           &sf,
                           pContext,
-                          0,
+                          nullptr,
                           SymFunctionTableAccess64,
                           SymGetModuleBase64,
-                          0))
+                          nullptr))
             break;
         if (0 == sf.AddrFrame.Offset)                       // Basic sanity check to make sure
             break;                                          // the frame is OK.  Bail if not.
@@ -617,10 +612,10 @@ void WheatyExceptionReport::WriteStackDetails(
             // Use SymSetContext to get just the locals/params for this frame
             IMAGEHLP_STACK_FRAME imagehlpStackFrame;
             imagehlpStackFrame.InstructionOffset = sf.AddrPC.Offset;
-            SymSetContext(m_hProcess, &imagehlpStackFrame, 0);
+            SymSetContext(m_hProcess, &imagehlpStackFrame, nullptr);
 
             // Enumerate the locals/parameters
-            SymEnumSymbols(m_hProcess, 0, 0, EnumerateSymbolsCallback, &sf);
+            SymEnumSymbols(m_hProcess, 0, nullptr, EnumerateSymbolsCallback, &sf);
 
             _tprintf(_T("\r\n"));
         }
@@ -854,7 +849,7 @@ char* WheatyExceptionReport::FormatOutputValue(char* pszCurrBuffer,
             if (!IsBadStringPtr(*(PSTR*)pAddress, 32))
             {
                 pszCurrBuffer += sprintf(pszCurrBuffer, " = \"%.31s\"",
-                                         *(PDWORD)pAddress);
+                                         (char*) * (PDWORD)pAddress);
             }
             else
                 pszCurrBuffer += sprintf(pszCurrBuffer, " = %X",
@@ -910,15 +905,14 @@ WheatyExceptionReport::GetBasicType(DWORD typeIndex, DWORD64 modBase)
 int __cdecl WheatyExceptionReport::_tprintf(const TCHAR* format, ...)
 {
     TCHAR szBuff[1024];
-    int retValue;
     DWORD cbWritten;
     va_list argptr;
 
     va_start(argptr, format);
-    retValue = vsprintf(szBuff, format, argptr);
+    int retValue = vsprintf(szBuff, format, argptr);
     va_end(argptr);
 
-    WriteFile(m_hReportFile, szBuff, retValue * sizeof(TCHAR), &cbWritten, 0);
+    WriteFile(m_hReportFile, szBuff, retValue * sizeof(TCHAR), &cbWritten, nullptr);
 
     return retValue;
 }

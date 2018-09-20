@@ -24,18 +24,15 @@
 //#include "Common.h"
 #include "Database.h"
 #include "Policies/Singleton.h"
-#include "ace/Thread_Mutex.h"
-#include "ace/Guard_T.h"
 
-#ifdef WIN32
-#include <winsock2.h>
+#ifdef _WIN32
 #include <mysql/mysql.h>
 #else
 #include <mysql.h>
 #endif
 
 // MySQL prepared statement class
-class MANGOS_DLL_SPEC MySqlPreparedStatement : public SqlPreparedStatement
+class MySqlPreparedStatement : public SqlPreparedStatement
 {
     public:
         MySqlPreparedStatement(const std::string& fmt, SqlConnection& conn, MYSQL* mysql);
@@ -66,10 +63,10 @@ class MANGOS_DLL_SPEC MySqlPreparedStatement : public SqlPreparedStatement
         MYSQL_RES* m_pResultMetadata;
 };
 
-class MANGOS_DLL_SPEC MySQLConnection : public SqlConnection
+class MySQLConnection : public SqlConnection
 {
     public:
-        MySQLConnection(Database& db) : SqlConnection(db), mMysql(NULL) {}
+        MySQLConnection(Database& db) : SqlConnection(db), mMysql(nullptr) {}
         ~MySQLConnection();
 
         //! Initializes Mysql and connects to a server.
@@ -96,7 +93,7 @@ class MANGOS_DLL_SPEC MySQLConnection : public SqlConnection
         MYSQL* mMysql;
 };
 
-class MANGOS_DLL_SPEC DatabaseMysql : public Database
+class DatabaseMysql : public Database
 {
         friend class MaNGOS::OperatorNew<DatabaseMysql>;
 

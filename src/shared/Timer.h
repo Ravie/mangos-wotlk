@@ -20,12 +20,10 @@
 #define MANGOS_TIMER_H
 
 #include "Common.h"
-#include <ace/OS_NS_sys_time.h>
 
 class WorldTimer
 {
     public:
-
         // get current server time
         static uint32 getMSTime();
 
@@ -44,21 +42,15 @@ class WorldTimer
         }
 
         // get last world tick time
-        static MANGOS_DLL_SPEC uint32 tickTime();
+        static uint32 tickTime();
         // get previous world tick time
-        static MANGOS_DLL_SPEC uint32 tickPrevTime();
+        static uint32 tickPrevTime();
         // tick world timer
-        static MANGOS_DLL_SPEC uint32 tick();
+        static uint32 tick();
 
-    private:
-        WorldTimer();
-        WorldTimer(const WorldTimer&);
-
-        // analogue to getMSTime() but it persists m_SystemTickTime
-        static uint32 getMSTime_internal(bool savetime = false);
-
-        static MANGOS_DLL_SPEC uint32 m_iTime;
-        static MANGOS_DLL_SPEC uint32 m_iPrevTime;
+     private:
+        static uint32 m_iTime;
+        static uint32 m_iPrevTime;
 };
 
 class IntervalTimer
@@ -132,14 +124,20 @@ struct TimeTracker
 struct ShortTimeTracker
 {
     public:
-        ShortTimeTracker(int32 expiry = 0) : i_expiryTime(expiry) {}
-        void Update(int32 diff) { i_expiryTime -= diff; }
+        ShortTimeTracker(uint32 expiry = 0) : i_expiryTime(expiry) {}
+        void Update(uint32 diff)
+        {
+            if (i_expiryTime <= diff)
+                i_expiryTime = 0;
+            else
+                i_expiryTime -= diff;
+        }
         bool Passed() const { return (i_expiryTime <= 0); }
-        void Reset(int32 interval) { i_expiryTime = interval; }
-        int32 GetExpiry() const { return i_expiryTime; }
+        void Reset(uint32 interval) { i_expiryTime = interval; }
+        uint32 GetExpiry() const { return i_expiryTime; }
 
     private:
-        int32 i_expiryTime;
+        uint32 i_expiryTime;
 };
 
 #endif

@@ -27,6 +27,14 @@
 #   include <io.h>
 
 #define stat64 _stat64
+#elif defined(__FreeBSD__)
+#   include <dirent.h>
+#   include <fnmatch.h>
+#   include <unistd.h>
+#   define O_LARGEFILE      0100000
+#   define stat64 stat
+#   define _stat stat
+#   define _getcwd getcwd
 #else
 #   include <dirent.h>
 #   include <fnmatch.h>
@@ -671,7 +679,7 @@ std::string FilePath::concat(const std::string& dirname, const std::string& file
 
 
 std::string FilePath::ext(const std::string& filename) {
-    int i = filename.rfind(".");
+    int i = (int)filename.rfind('.');
     if (i >= 0) {
         return filename.substr(i + 1, filename.length() - i);
     } else {
@@ -684,7 +692,7 @@ std::string FilePath::baseExt(const std::string& filename) {
     int i = findLastSlash(filename);
 
 #   ifdef G3D_WIN32
-        int j = filename.rfind(":");
+        int j = (int)filename.rfind(':');
         if ((i == -1) && (j >= 0)) {
             i = j;
         }
@@ -700,7 +708,7 @@ std::string FilePath::baseExt(const std::string& filename) {
 
 std::string FilePath::base(const std::string& path) {
     std::string filename = baseExt(path);
-    int i = filename.rfind(".");
+    int i = (int)filename.rfind('.');
     if (i == -1) {
         // No extension
         return filename;
@@ -714,7 +722,7 @@ std::string FilePath::parent(const std::string& path) {
     int i = findLastSlash(removeTrailingSlash(path));
 
 #   ifdef G3D_WIN32
-        int j = path.rfind(":");
+        int j = (int)path.rfind(':');
         if ((i == -1) && (j >= 0)) {
             i = j;
         }

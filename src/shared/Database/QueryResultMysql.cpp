@@ -38,12 +38,10 @@ QueryResultMysql::~QueryResultMysql()
 
 bool QueryResultMysql::NextRow()
 {
-    MYSQL_ROW row;
-
     if (!mResult)
         return false;
 
-    row = mysql_fetch_row(mResult);
+    MYSQL_ROW row = mysql_fetch_row(mResult);
     if (!row)
     {
         EndQuery();
@@ -59,12 +57,12 @@ bool QueryResultMysql::NextRow()
 void QueryResultMysql::EndQuery()
 {
     delete[] mCurrentRow;
-    mCurrentRow = 0;
+    mCurrentRow = nullptr;
 
     if (mResult)
     {
         mysql_free_result(mResult);
-        mResult = 0;
+        mResult = nullptr;
     }
 }
 

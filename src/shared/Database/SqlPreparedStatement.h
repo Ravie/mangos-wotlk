@@ -20,7 +20,7 @@
 #define SQLPREPAREDSTATEMENTS_H
 
 #include "Common.h"
-#include <ace/TSS_T.h>
+
 #include <vector>
 #include <stdexcept>
 
@@ -62,7 +62,7 @@ enum SqlStmtFieldType
 
 // templates might be the best choice here
 // but I didn't have time to play with them
-class MANGOS_DLL_SPEC SqlStmtFieldData
+class SqlStmtFieldData
 {
     public:
         SqlStmtFieldData() : m_type(FIELD_NONE) { m_binaryData.ui64 = 0; }
@@ -75,7 +75,7 @@ class MANGOS_DLL_SPEC SqlStmtFieldData
         void set(T1 param1);
 
         // getters
-        bool toBool() const { MANGOS_ASSERT(m_type == FIELD_BOOL); return static_cast<bool>(m_binaryData.ui8); }
+        bool toBool() const { MANGOS_ASSERT(m_type == FIELD_BOOL); return m_binaryData.ui8 != 0; }
         uint8 toUint8() const { MANGOS_ASSERT(m_type == FIELD_UI8); return m_binaryData.ui8; }
         int8 toInt8() const { MANGOS_ASSERT(m_type == FIELD_I8); return m_binaryData.i8; }
         uint16 toUint16() const { MANGOS_ASSERT(m_type == FIELD_UI16); return m_binaryData.ui16; }
@@ -139,7 +139,7 @@ template<> inline void SqlStmtFieldData::set(const char* val) { m_type = FIELD_S
 
 class SqlStatement;
 // prepared statement executor
-class MANGOS_DLL_SPEC SqlStmtParameters
+class SqlStmtParameters
 {
     public:
         typedef std::vector<SqlStmtFieldData> ParameterContainer;
@@ -188,12 +188,12 @@ class SqlStatementID
 };
 
 // statement index
-class MANGOS_DLL_SPEC SqlStatement
+class SqlStatement
 {
     public:
         ~SqlStatement() { delete m_pParams; }
 
-        SqlStatement(const SqlStatement& index) : m_index(index.m_index), m_pDB(index.m_pDB), m_pParams(NULL)
+        SqlStatement(const SqlStatement& index) : m_index(index.m_index), m_pDB(index.m_pDB), m_pParams(nullptr)
         {
             if (index.m_pParams)
                 m_pParams = new SqlStmtParameters(*(index.m_pParams));
@@ -261,7 +261,7 @@ class MANGOS_DLL_SPEC SqlStatement
     protected:
         // don't allow anyone except Database class to create static SqlStatement objects
         friend class Database;
-        SqlStatement(const SqlStatementID& index, Database& db) : m_index(index), m_pDB(&db), m_pParams(NULL) {}
+        SqlStatement(const SqlStatementID& index, Database& db) : m_index(index), m_pDB(&db), m_pParams(nullptr) {}
 
     private:
 
@@ -276,7 +276,7 @@ class MANGOS_DLL_SPEC SqlStatement
         SqlStmtParameters* detach()
         {
             SqlStmtParameters* p = m_pParams ? m_pParams : new SqlStmtParameters(0);
-            m_pParams = NULL;
+            m_pParams = nullptr;
             return p;
         }
 
@@ -295,7 +295,7 @@ class MANGOS_DLL_SPEC SqlStatement
 };
 
 // base prepared statement class
-class MANGOS_DLL_SPEC SqlPreparedStatement
+class SqlPreparedStatement
 {
     public:
         virtual ~SqlPreparedStatement() {}
@@ -330,7 +330,7 @@ class MANGOS_DLL_SPEC SqlPreparedStatement
 };
 
 // prepared statements via plain SQL string requests
-class MANGOS_DLL_SPEC SqlPlainPreparedStatement : public SqlPreparedStatement
+class SqlPlainPreparedStatement : public SqlPreparedStatement
 {
     public:
         SqlPlainPreparedStatement(const std::string& fmt, SqlConnection& conn);
@@ -345,7 +345,7 @@ class MANGOS_DLL_SPEC SqlPlainPreparedStatement : public SqlPreparedStatement
         virtual bool execute() override;
 
     protected:
-        void DataToString(const SqlStmtFieldData& data, std::ostringstream& fmt);
+        void DataToString(const SqlStmtFieldData& data, std::ostringstream& fmt) const;
 
         std::string m_szPlainRequest;
 };

@@ -21,20 +21,20 @@
 /// \file
 
 #include "Common.h"
-#include "Language.h"
+#include "Tools/Language.h"
 #include "Log.h"
-#include "World.h"
-#include "ObjectMgr.h"
-#include "WorldSession.h"
+#include "World/World.h"
+#include "Globals/ObjectMgr.h"
+#include "Server/WorldSession.h"
 #include "Config/Config.h"
 #include "Util.h"
-#include "AccountMgr.h"
+#include "Accounts/AccountMgr.h"
 #include "CliRunnable.h"
-#include "MapManager.h"
-#include "Player.h"
-#include "Chat.h"
+#include "Maps/MapManager.h"
+#include "Entities/Player.h"
+#include "Chat/Chat.h"
 
-void utf8print(void* /*arg*/, const char* str)
+void utf8print(const char* str)
 {
 #if PLATFORM == PLATFORM_WINDOWS
     wchar_t wtemp_buf[6000];
@@ -50,7 +50,7 @@ void utf8print(void* /*arg*/, const char* str)
 #endif
 }
 
-void commandFinished(void*, bool /*sucess*/)
+void commandFinished(bool)
 {
     printf("mangos>");
     fflush(stdout);
@@ -71,7 +71,7 @@ bool ChatHandler::HandleAccountDeleteCommand(char* args)
     /// Commands not recommended call from chat, but support anyway
     /// can delete only for account with less security
     /// This is also reject self apply in fact
-    if (HasLowerSecurityAccount(NULL, account_id, true))
+    if (HasLowerSecurityAccount(nullptr, account_id, true))
         return false;
 
     AccountOpResult result = sAccountMgr.DeleteAccount(account_id);
@@ -104,7 +104,7 @@ bool ChatHandler::HandleAccountDeleteCommand(char* args)
  * @param searchString the search string which either contains a player GUID (low part) or a part of the character-name
  * @return             returns false if there was a problem while selecting the characters (e.g. player name not normalizeable)
  */
-bool ChatHandler::GetDeletedCharacterInfoList(DeletedInfoList& foundList, std::string searchString)
+bool ChatHandler::GetDeletedCharacterInfoList(DeletedInfoList& foundList, std::string searchString) const
 {
     QueryResult* resultChar;
     if (!searchString.empty())
@@ -199,18 +199,18 @@ void ChatHandler::HandleCharacterDeletedListHelper(DeletedInfoList const& foundL
         SendSysMessage(LANG_CHARACTER_DELETED_LIST_BAR);
     }
 
-    for (DeletedInfoList::const_iterator itr = foundList.begin(); itr != foundList.end(); ++itr)
+    for (const auto& itr : foundList)
     {
-        std::string dateStr = TimeToTimestampStr(itr->deleteDate);
+        std::string dateStr = TimeToTimestampStr(itr.deleteDate);
 
         if (!m_session)
             PSendSysMessage(LANG_CHARACTER_DELETED_LIST_LINE_CONSOLE,
-                            itr->lowguid, itr->name.c_str(), itr->accountName.empty() ? "<nonexistent>" : itr->accountName.c_str(),
-                            itr->accountId, dateStr.c_str());
+                itr.lowguid, itr.name.c_str(), itr.accountName.empty() ? "<nonexistent>" : itr.accountName.c_str(),
+                itr.accountId, dateStr.c_str());
         else
             PSendSysMessage(LANG_CHARACTER_DELETED_LIST_LINE_CHAT,
-                            itr->lowguid, itr->name.c_str(), itr->accountName.empty() ? "<nonexistent>" : itr->accountName.c_str(),
-                            itr->accountId, dateStr.c_str());
+                itr.lowguid, itr.name.c_str(), itr.accountName.empty() ? "<nonexistent>" : itr.accountName.c_str(),
+                itr.accountId, dateStr.c_str());
     }
 
     if (!m_session)
@@ -321,8 +321,8 @@ bool ChatHandler::HandleCharacterDeletedRestoreCommand(char* args)
     if (newCharName.empty())
     {
         // Drop nonexistent account cases
-        for (DeletedInfoList::iterator itr = foundList.begin(); itr != foundList.end(); ++itr)
-            HandleCharacterDeletedRestoreHelper(*itr);
+        for (auto& itr : foundList)
+            HandleCharacterDeletedRestoreHelper(itr);
     }
     else if (foundList.size() == 1 && normalizePlayerName(newCharName))
     {
@@ -495,7 +495,7 @@ bool ChatHandler::HandleAccountCreateCommand(char* args)
             SendSysMessage(LANG_ACCOUNT_TOO_LONG);
             SetSentErrorMessage(true);
             return false;
-        case AOR_NAME_ALREDY_EXIST:
+        case AOR_NAME_ALREADY_EXIST:
             SendSysMessage(LANG_ACCOUNT_ALREADY_EXIST);
             SetSentErrorMessage(true);
             return false;
@@ -543,12 +543,13 @@ bool ChatHandler::HandleServerLogFilterCommand(char* args)
         return true;
     }
 
+    size_t _len = strlen(filtername);
     for (int i = 0; i < LOG_FILTER_COUNT; ++i)
     {
         if (!*logFilterData[i].name)
             continue;
 
-        if (!strncmp(filtername, logFilterData[i].name, strlen(filtername)))
+        if (!strncmp(filtername, logFilterData[i].name, _len))
         {
             sLog.SetLogFilter(LogFilters(1 << i), value);
             PSendSysMessage("  %-20s = %s", logFilterData[i].name, GetOnOffStr(value));
@@ -574,7 +575,7 @@ bool ChatHandler::HandleServerLogLevelCommand(char* args)
 
 /// @}
 
-#ifdef linux
+#ifdef __unix__
 // Non-blocking keypress detector, when return pressed, return 1, else always return 0
 int kb_hit_return()
 {
@@ -584,7 +585,7 @@ int kb_hit_return()
     tv.tv_usec = 0;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
-    select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+    select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv);
     return FD_ISSET(STDIN_FILENO, &fds);
 }
 #endif
@@ -607,19 +608,30 @@ void CliRunnable::run()
     // later it will be printed after command queue updates
     printf("mangos>");
 
+#ifdef __unix__
+    //Set stdin IO to nonblocking - prevent Server from hanging in shutdown process till enter is pressed
+    int fd = fileno(stdin);
+    int flags = fcntl(fd, F_GETFL, 0);
+    flags |= O_NONBLOCK;
+    fcntl(fd, F_SETFL, flags);
+#endif
+
     ///- As long as the World is running (no World::m_stopEvent), get the command line and handle it
     while (!World::IsStopped())
     {
         fflush(stdout);
-#ifdef linux
+#ifdef __unix__
         while (!kb_hit_return() && !World::IsStopped())
+        {
             // With this, we limit CLI to 10commands/second
-            usleep(100);
-        if (World::IsStopped())
-            break;
+            std::this_thread::sleep_for(std::chrono::nanoseconds(100000));
+            // Check for world stoppage after each sleep interval
+            if (World::IsStopped())
+                break;
+        }
 #endif
         char* command_str = fgets(commandbuf, sizeof(commandbuf), stdin);
-        if (command_str != NULL)
+        if (command_str != nullptr)
         {
             for (int x = 0; command_str[x]; ++x)
                 if (command_str[x] == '\r' || command_str[x] == '\n')
@@ -641,7 +653,7 @@ void CliRunnable::run()
                 continue;
             }
 
-            sWorld.QueueCliCommand(new CliCommandHolder(0, SEC_CONSOLE, NULL, command.c_str(), &utf8print, &commandFinished));
+            sWorld.QueueCliCommand(new CliCommandHolder(0, SEC_CONSOLE, command.c_str(), &utf8print, &commandFinished));
         }
         else if (feof(stdin))
         {

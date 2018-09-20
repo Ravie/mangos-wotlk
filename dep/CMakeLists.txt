@@ -14,15 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-#
 
-if(NOT (TBB_USE_EXTERNAL OR USE_STD_MALLOC))
-  add_subdirectory(tbb)
-endif()
-
-if(NOT ACE_USE_EXTERNAL)
-  add_subdirectory(ACE_wrappers)
-endif()
-
+# disable warnings for dependencies
+DisableWarnings()
 add_subdirectory(recastnavigation)
 add_subdirectory(src)
+if (BUILD_EXTRACTORS)
+  add_subdirectory(libmpq)
+endif()

@@ -19,7 +19,7 @@
 #include "OutdoorPvPMgr.h"
 #include "Policies/Singleton.h"
 #include "OutdoorPvP.h"
-#include "World.h"
+#include "World/World.h"
 #include "Log.h"
 #include "OutdoorPvPEP.h"
 #include "OutdoorPvPGH.h"
@@ -28,6 +28,8 @@
 #include "OutdoorPvPSI.h"
 #include "OutdoorPvPTF.h"
 #include "OutdoorPvPZM.h"
+#include "Battlefield/Battlefield.h"
+#include "Battlefield/BattlefieldWG.h"
 
 INSTANTIATE_SINGLETON_1(OutdoorPvPMgr);
 
@@ -39,8 +41,8 @@ OutdoorPvPMgr::OutdoorPvPMgr()
 
 OutdoorPvPMgr::~OutdoorPvPMgr()
 {
-    for (uint8 i = 0; i < MAX_OPVP_ID; ++i)
-        delete m_scripts[i];
+    for (auto& m_script : m_scripts)
+        delete m_script;
 }
 
 #define LOAD_OPVP_ZONE(a)                                           \
@@ -49,6 +51,14 @@ OutdoorPvPMgr::~OutdoorPvPMgr()
         m_scripts[OPVP_ID_##a] = new OutdoorPvP##a();               \
         ++counter;                                                  \
     }
+
+#define LOAD_BATTLEFIELD(a)                                         \
+    if (sWorld.getConfig(CONFIG_BOOL_BATTLEFIELD_##a##_ENABLED))    \
+    {                                                               \
+        m_scripts[OPVP_ID_##a] = new Battlefield##a();              \
+        ++counter;                                                  \
+    }
+
 /**
    Function which loads all outdoor pvp scripts
  */
@@ -63,6 +73,7 @@ void OutdoorPvPMgr::InitOutdoorPvP()
     LOAD_OPVP_ZONE(TF);
     LOAD_OPVP_ZONE(NA);
     LOAD_OPVP_ZONE(GH);
+    LOAD_BATTLEFIELD(WG);
 
     sLog.outString(">> Loaded %u Outdoor PvP zones", counter);
     sLog.outString();
@@ -86,8 +97,10 @@ OutdoorPvP* OutdoorPvPMgr::GetScript(uint32 zoneId)
             return m_scripts[OPVP_ID_NA];
         case ZONE_ID_GRIZZLY_HILLS:
             return m_scripts[OPVP_ID_GH];
+        case ZONE_ID_WINTERGRASP:
+            return m_scripts[OPVP_ID_WG];
         default:
-            return NULL;
+            return nullptr;
     }
 }
 
@@ -106,9 +119,7 @@ OutdoorPvP* OutdoorPvPMgr::GetScriptOfAffectedZone(uint32 zoneId)
         case ZONE_ID_HELLFIRE_CITADEL:
         case ZONE_ID_BLOOD_FURNACE:
         case ZONE_ID_SHATTERED_HALLS:
-        case ZONE_ID_MAGTHERIDON_LAIR:
             return m_scripts[OPVP_ID_HP];
-        case ZONE_ID_SERPENTSHRINE_CAVERN:
         case ZONE_ID_STREAMVAULT:
         case ZONE_ID_UNDERBOG:
         case ZONE_ID_SLAVE_PENS:
@@ -119,7 +130,7 @@ OutdoorPvP* OutdoorPvPMgr::GetScriptOfAffectedZone(uint32 zoneId)
         case ZONE_ID_MANA_TOMBS:
             return m_scripts[OPVP_ID_TF];
         default:
-            return NULL;
+            return nullptr;
     }
 }
 
@@ -133,8 +144,8 @@ void OutdoorPvPMgr::HandlePlayerEnterZone(Player* player, uint32 zoneId)
 {
     if (OutdoorPvP* script = GetScript(zoneId))
         script->HandlePlayerEnterZone(player, true);
-    else if (OutdoorPvP* script = GetScriptOfAffectedZone(zoneId))
-        script->HandlePlayerEnterZone(player, false);
+    else if (OutdoorPvP* affectedScript = GetScriptOfAffectedZone(zoneId))
+        affectedScript->HandlePlayerEnterZone(player, false);
 }
 
 /**
@@ -148,8 +159,38 @@ void OutdoorPvPMgr::HandlePlayerLeaveZone(Player* player, uint32 zoneId)
     // teleport: called once from Player::CleanupsBeforeDelete, once from Player::UpdateZone
     if (OutdoorPvP* script = GetScript(zoneId))
         script->HandlePlayerLeaveZone(player, true);
-    else if (OutdoorPvP* script = GetScriptOfAffectedZone(zoneId))
-        script->HandlePlayerLeaveZone(player, false);
+    else if (OutdoorPvP* affectedScript = GetScriptOfAffectedZone(zoneId))
+        affectedScript->HandlePlayerLeaveZone(player, false);
+}
+
+/**
+   Function that handles the player who enters a specific area in a specific zone id
+
+   @param   player to be handled in the event
+   @param   zone id used for the current outdoor pvp script
+   @param   area id refered by the function
+ */
+void OutdoorPvPMgr::HandlePlayerEnterArea(Player* player, uint32 zoneId, uint32 areaId)
+{
+    if (OutdoorPvP* script = GetScript(zoneId))
+        script->HandlePlayerEnterArea(player, areaId, true);
+    else if (OutdoorPvP* affectedScript = GetScriptOfAffectedZone(zoneId))
+        affectedScript->HandlePlayerEnterArea(player, areaId, false);
+}
+
+/**
+   Function that handles the player who leaves a specific area in a specific zone id
+
+   @param   player to be handled in the event
+   @param   zone id used for the current outdoor pvp script
+   @param   area id refered by the function
+ */
+void OutdoorPvPMgr::HandlePlayerLeaveArea(Player* player, uint32 zoneId, uint32 areaId)
+{
+    if (OutdoorPvP* script = GetScript(zoneId))
+        script->HandlePlayerLeaveArea(player, areaId, true);
+    else if (OutdoorPvP* affectedScript = GetScriptOfAffectedZone(zoneId))
+        affectedScript->HandlePlayerLeaveArea(player, areaId, false);
 }
 
 void OutdoorPvPMgr::Update(uint32 diff)
@@ -158,9 +199,24 @@ void OutdoorPvPMgr::Update(uint32 diff)
     if (!m_updateTimer.Passed())
         return;
 
-    for (uint8 i = 0; i < MAX_OPVP_ID; ++i)
-        if (m_scripts[i])
-            m_scripts[i]->Update(m_updateTimer.GetCurrent());
+    for (auto& m_script : m_scripts)
+        if (m_script)
+            m_script->Update(m_updateTimer.GetCurrent());
 
     m_updateTimer.Reset();
+}
+
+/**
+   Function that returns the battlefield script by id
+
+   @param   battlefield id
+ */
+Battlefield* OutdoorPvPMgr::GetBattlefieldById(uint32 id)
+{
+    for (auto script : m_scripts)
+        if (script)
+            if (script->IsBattlefield() && ((Battlefield*)script)->GetBattlefieldId() == id)
+                return (Battlefield*)script;
+
+    return nullptr;
 }

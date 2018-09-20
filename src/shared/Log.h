@@ -22,6 +22,8 @@
 #include "Common.h"
 #include "Policies/Singleton.h"
 
+#include <mutex>
+
 class Config;
 class ByteBuffer;
 
@@ -90,48 +92,52 @@ enum Color
 
 const int Color_count = int(WHITE) + 1;
 
-class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, ACE_Thread_Mutex> >
+class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, std::mutex> >
 {
         friend class MaNGOS::OperatorNew<Log>;
         Log();
 
         ~Log()
         {
-            if (logfile != NULL)
+            if (logfile != nullptr)
                 fclose(logfile);
-            logfile = NULL;
+            logfile = nullptr;
 
-            if (gmLogfile != NULL)
+            if (gmLogfile != nullptr)
                 fclose(gmLogfile);
-            gmLogfile = NULL;
+            gmLogfile = nullptr;
 
-            if (charLogfile != NULL)
+            if (charLogfile != nullptr)
                 fclose(charLogfile);
-            charLogfile = NULL;
+            charLogfile = nullptr;
 
-            if (dberLogfile != NULL)
+            if (dberLogfile != nullptr)
                 fclose(dberLogfile);
-            dberLogfile = NULL;
+            dberLogfile = nullptr;
 
-            if (eventAiErLogfile != NULL)
+            if (eventAiErLogfile != nullptr)
                 fclose(eventAiErLogfile);
-            eventAiErLogfile = NULL;
+            eventAiErLogfile = nullptr;
 
-            if (scriptErrLogFile != NULL)
+            if (scriptErrLogFile != nullptr)
                 fclose(scriptErrLogFile);
-            scriptErrLogFile = NULL;
+            scriptErrLogFile = nullptr;
 
-            if (raLogfile != NULL)
+            if (raLogfile != nullptr)
                 fclose(raLogfile);
-            raLogfile = NULL;
+            raLogfile = nullptr;
 
-            if (worldLogfile != NULL)
+            if (worldLogfile != nullptr)
                 fclose(worldLogfile);
-            worldLogfile = NULL;
+            worldLogfile = nullptr;
+
+            if (customLogFile != nullptr)
+                fclose(customLogFile);
+            customLogFile = nullptr;
         }
     public:
         void Initialize();
-        void InitColors(const std::string& init_str);
+        void InitColors(const std::string& str);
 
         void outCommand(uint32 account, const char* str, ...) ATTR_PRINTF(3, 4);
         void outString();                                   // any log level
@@ -148,31 +154,32 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, ACE_Th
 
         void outErrorDb();                                  // any log level
         // any log level
-        void outErrorDb(const char* str, ...)     ATTR_PRINTF(2, 3);
+        void outErrorDb(const char* err, ...)     ATTR_PRINTF(2, 3);
         // any log level
         void outChar(const char* str, ...)        ATTR_PRINTF(2, 3);
 
         void outErrorEventAI();                             // any log level
         // any log level
-        void outErrorEventAI(const char* str, ...)      ATTR_PRINTF(2, 3);
+        void outErrorEventAI(const char* err, ...)      ATTR_PRINTF(2, 3);
 
         void outErrorScriptLib();                           // any log level
         // any log level
-        void outErrorScriptLib(const char* str, ...)     ATTR_PRINTF(2, 3);
+        void outErrorScriptLib(const char* err, ...)     ATTR_PRINTF(2, 3);
 
-        void outWorldPacketDump(uint32 socket, uint32 opcode, char const* opcodeName, ByteBuffer const* packet, bool incoming);
+        void outWorldPacketDump(const char* socket, uint32 opcode, char const* opcodeName, ByteBuffer const& packet, bool incoming);
         // any log level
         void outCharDump(const char* str, uint32 account_id, uint32 guid, const char* name);
         void outRALog(const char* str, ...)       ATTR_PRINTF(2, 3);
+        void outCustomLog(const char* str, ...)       ATTR_PRINTF(2, 3);
         uint32 GetLogLevel() const { return m_logLevel; }
-        void SetLogLevel(char* Level);
-        void SetLogFileLevel(char* Level);
+        void SetLogLevel(char* level);
+        void SetLogFileLevel(char* level);
         void SetColor(bool stdout_stream, Color color);
         void ResetColor(bool stdout_stream);
-        void outTime();
+        void outTime() const;
         static void outTimestamp(FILE* file);
         static std::string GetTimestampStr();
-        bool HasLogFilter(uint32 filter) const { return m_logFilter & filter; }
+        bool HasLogFilter(uint32 filter) const { return (m_logFilter & filter) != 0; }
         void SetLogFilter(LogFilters filter, bool on) { if (on) m_logFilter |= filter; else m_logFilter &= ~filter; }
         bool HasLogLevelOrHigher(LogLevel loglvl) const { return m_logLevel >= loglvl || (m_logFileLevel >= loglvl && logfile); }
         bool IsOutCharDump() const { return m_charLog_Dump; }
@@ -195,7 +202,8 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, ACE_Th
         FILE* eventAiErLogfile;
         FILE* scriptErrLogFile;
         FILE* worldLogfile;
-        ACE_Thread_Mutex m_worldLogMtx;
+        FILE* customLogFile;
+        std::mutex m_worldLogMtx;
 
         // log/console control
         LogLevel m_logLevel;
@@ -267,12 +275,13 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, ACE_Th
     ERROR_DB_FILTER_LOG(LOG_FILTER_DB_STRICTED_CHECK, __VA_ARGS__)
 
 // primary for script library
-void MANGOS_DLL_SPEC outstring_log(const char* str, ...) ATTR_PRINTF(1, 2);
-void MANGOS_DLL_SPEC detail_log(const char* str, ...) ATTR_PRINTF(1, 2);
-void MANGOS_DLL_SPEC debug_log(const char* str, ...) ATTR_PRINTF(1, 2);
-void MANGOS_DLL_SPEC error_log(const char* str, ...) ATTR_PRINTF(1, 2);
-void MANGOS_DLL_SPEC error_db_log(const char* str, ...) ATTR_PRINTF(1, 2);
-void MANGOS_DLL_SPEC setScriptLibraryErrorFile(char const* fname, char const* libName);
-void MANGOS_DLL_SPEC script_error_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void outstring_log();
+void outstring_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void detail_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void debug_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void error_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void error_db_log(const char* str, ...) ATTR_PRINTF(1, 2);
+void setScriptLibraryErrorFile(char const* fname, char const* libName);
+void script_error_log(const char* str, ...) ATTR_PRINTF(1, 2);
 
 #endif

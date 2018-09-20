@@ -20,18 +20,17 @@
     \ingroup mangosd
 */
 
-#include "WorldSocketMgr.h"
 #include "Common.h"
-#include "World.h"
+#include "World/World.h"
 #include "WorldRunnable.h"
 #include "Timer.h"
-#include "MapManager.h"
+#include "Maps/MapManager.h"
 
 #include "Database/DatabaseEnv.h"
 
 #define WORLD_SLEEP_CONST 50
 
-#ifdef WIN32
+#ifdef _WIN32
 #include "ServiceWin32.h"
 extern int m_ServiceStatus;
 #endif
@@ -66,22 +65,18 @@ void WorldRunnable::run()
         if (diff <= WORLD_SLEEP_CONST + prevSleepTime)
         {
             prevSleepTime = WORLD_SLEEP_CONST + prevSleepTime - diff;
-            ACE_Based::Thread::Sleep(prevSleepTime);
+            MaNGOS::Thread::Sleep(prevSleepTime);
         }
         else
             prevSleepTime = 0;
 
-#ifdef WIN32
+#ifdef _WIN32
         if (m_ServiceStatus == 0) World::StopNow(SHUTDOWN_EXIT_CODE);
         while (m_ServiceStatus == 2) Sleep(1000);
 #endif
     }
 
     sWorld.CleanupsBeforeStop();
-
-    sWorldSocketMgr->StopNetwork();
-
-    MapManager::Instance().UnloadAll();                     // unload all grids (including locked in memory)
 
     ///- End the database thread
     WorldDatabase.ThreadEnd();                              // free mySQL thread resources

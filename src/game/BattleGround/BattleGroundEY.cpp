@@ -16,19 +16,17 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include "Object.h"
-#include "Player.h"
+#include "Entities/Object.h"
+#include "Entities/Player.h"
 #include "BattleGround.h"
 #include "BattleGroundEY.h"
-#include "Creature.h"
-#include "ObjectMgr.h"
+#include "Entities/Creature.h"
+#include "Globals/ObjectMgr.h"
 #include "BattleGroundMgr.h"
-#include "Language.h"
+#include "Tools/Language.h"
 #include "WorldPacket.h"
-#include "Util.h"
-#include "MapManager.h"
 
-BattleGroundEY::BattleGroundEY()
+BattleGroundEY::BattleGroundEY(): m_flagState(), m_towersAlliance(0), m_towersHorde(0), m_honorTicks(0), m_flagRespawnTimer(0), m_resourceUpdateTimer(0), m_felReaverFlagTimer(0)
 {
     m_StartMessageIds[BG_STARTING_EVENT_FIRST]  = 0;
     m_StartMessageIds[BG_STARTING_EVENT_SECOND] = LANG_BG_EY_START_ONE_MINUTE;
@@ -65,6 +63,28 @@ void BattleGroundEY::Update(uint32 diff)
         }
         else
             m_flagRespawnTimer -= diff;
+    }
+
+    // workaround for Fel Reaver Ruins flag capture needed on 3.3.5 only
+    // the original areatrigger (4514) is covered by a bigger one (4515) and is not triggered on client side
+    if (IsFlagPickedUp())
+    {
+        if (m_felReaverFlagTimer < diff)
+        {
+            Player* flagCarrier = sObjectMgr.GetPlayer(GetFlagCarrierGuid());
+            if (flagCarrier)
+            {
+                if (m_towerOwner[NODE_FEL_REAVER_RUINS] == flagCarrier->GetTeam())
+                {
+                    // coords and range taken from DBC of areatrigger (4514)
+                    if (flagCarrier->IsWithinDist3d(2044.0f, 1729.729f, 1190.03f, 3.0f))
+                        EventPlayerCapturedFlag(flagCarrier, NODE_FEL_REAVER_RUINS);
+                }
+            }
+            m_felReaverFlagTimer = EY_FEL_REAVER_FLAG_UPDATE_TIME;
+        }
+        else
+            m_felReaverFlagTimer -= diff;
     }
 }
 
@@ -131,8 +151,8 @@ void BattleGroundEY::EndBattleGround(Team winner)
     RewardHonorToTeam(GetBonusHonorFromKill(1), HORDE);
 
     // disable capture points
-    for (uint8 i = 0; i < EY_NODES_MAX; ++i)
-        if (GameObject* go = GetBgMap()->GetGameObject(m_towers[i]))
+    for (auto m_tower : m_towers)
+        if (GameObject* go = GetBgMap()->GetGameObject(m_tower))
             go->SetLootState(GO_JUST_DEACTIVATED);
 
     BattleGround::EndBattleGround(winner);
@@ -270,13 +290,13 @@ void BattleGroundEY::ProcessCaptureEvent(GameObject* /*go*/, uint32 towerId, Tea
     m_towerOwner[towerId] = team;
 }
 
-void BattleGroundEY::HandleAreaTrigger(Player* source, uint32 trigger)
+bool BattleGroundEY::HandleAreaTrigger(Player* source, uint32 trigger)
 {
     if (GetStatus() != STATUS_IN_PROGRESS)
-        return;
+        return false;
 
     if (!source->isAlive())                                 // hack code, must be removed later
-        return;
+        return false;
 
     switch (trigger)
     {
@@ -296,7 +316,10 @@ void BattleGroundEY::HandleAreaTrigger(Player* source, uint32 trigger)
             if (m_towerOwner[NODE_DRAENEI_RUINS] == source->GetTeam())
                 EventPlayerCapturedFlag(source, NODE_DRAENEI_RUINS);
             break;
+        default:
+            return false;
     }
+    return true;
 }
 
 void BattleGroundEY::Reset()
@@ -320,6 +343,7 @@ void BattleGroundEY::Reset()
 
     m_flagRespawnTimer = 0;
     m_resourceUpdateTimer = 0;
+    m_felReaverFlagTimer = 0;
 
     m_towerWorldState[NODE_BLOOD_ELF_TOWER] = WORLD_STATE_EY_BLOOD_ELF_TOWER_NEUTRAL;
     m_towerWorldState[NODE_FEL_REAVER_RUINS] = WORLD_STATE_EY_FEL_REAVER_RUINS_NEUTRAL;
@@ -372,18 +396,6 @@ void BattleGroundEY::HandleKillPlayer(Player* player, Player* killer)
 
 void BattleGroundEY::EventPlayerDroppedFlag(Player* source)
 {
-    if (GetStatus() != STATUS_IN_PROGRESS)
-    {
-        // if not running, do not cast things at the dropper player, neither send unnecessary messages
-        // just take off the aura
-        if (IsFlagPickedUp() && GetFlagCarrierGuid() == source->GetObjectGuid())
-        {
-            ClearFlagCarrier();
-            source->RemoveAurasDueToSpell(EY_NETHERSTORM_FLAG_SPELL);
-        }
-        return;
-    }
-
     if (!IsFlagPickedUp())
         return;
 
@@ -392,20 +404,27 @@ void BattleGroundEY::EventPlayerDroppedFlag(Player* source)
 
     ClearFlagCarrier();
     source->RemoveAurasDueToSpell(EY_NETHERSTORM_FLAG_SPELL);
+
+    if (GetStatus() != STATUS_IN_PROGRESS)
+    {
+        // do not cast auras or send messages after match has ended
+        return;
+    }
+
     m_flagState = EY_FLAG_STATE_ON_GROUND;
     m_flagRespawnTimer = EY_FLAG_RESPAWN_TIME;
-    source->CastSpell(source, SPELL_RECENTLY_DROPPED_FLAG, true);
-    source->CastSpell(source, EY_PLAYER_DROPPED_FLAG_SPELL, true);
+    source->CastSpell(source, SPELL_RECENTLY_DROPPED_FLAG, TRIGGERED_OLD_TRIGGERED);
+    source->CastSpell(source, EY_PLAYER_DROPPED_FLAG_SPELL, TRIGGERED_OLD_TRIGGERED);
 
     if (source->GetTeam() == ALLIANCE)
     {
         UpdateWorldState(WORLD_STATE_EY_NETHERSTORM_FLAG_STATE_ALLIANCE, 1);
-        SendMessageToAll(LANG_BG_EY_DROPPED_FLAG, CHAT_MSG_BG_SYSTEM_ALLIANCE, NULL);
+        SendMessageToAll(LANG_BG_EY_DROPPED_FLAG, CHAT_MSG_BG_SYSTEM_ALLIANCE, nullptr);
     }
     else
     {
         UpdateWorldState(WORLD_STATE_EY_NETHERSTORM_FLAG_STATE_HORDE, 1);
-        SendMessageToAll(LANG_BG_EY_DROPPED_FLAG, CHAT_MSG_BG_SYSTEM_HORDE, NULL);
+        SendMessageToAll(LANG_BG_EY_DROPPED_FLAG, CHAT_MSG_BG_SYSTEM_HORDE, nullptr);
     }
 }
 
@@ -437,13 +456,13 @@ void BattleGroundEY::EventPlayerClickedOnFlag(Player* source, GameObject* target
 
     SetFlagCarrier(source->GetObjectGuid());
     // get flag aura on player
-    source->CastSpell(source, EY_NETHERSTORM_FLAG_SPELL, true);
+    source->CastSpell(source, EY_NETHERSTORM_FLAG_SPELL, TRIGGERED_OLD_TRIGGERED);
     source->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ENTER_PVP_COMBAT);
 
     if (source->GetTeam() == ALLIANCE)
-        PSendMessageToAll(LANG_BG_EY_HAS_TAKEN_FLAG, CHAT_MSG_BG_SYSTEM_ALLIANCE, NULL, source->GetName());
+        PSendMessageToAll(LANG_BG_EY_HAS_TAKEN_FLAG, CHAT_MSG_BG_SYSTEM_ALLIANCE, nullptr, source->GetName());
     else
-        PSendMessageToAll(LANG_BG_EY_HAS_TAKEN_FLAG, CHAT_MSG_BG_SYSTEM_HORDE, NULL, source->GetName());
+        PSendMessageToAll(LANG_BG_EY_HAS_TAKEN_FLAG, CHAT_MSG_BG_SYSTEM_HORDE, nullptr, source->GetName());
 }
 
 void BattleGroundEY::EventPlayerCapturedFlag(Player* source, EYNodes node)
@@ -538,16 +557,14 @@ void BattleGroundEY::FillInitialWorldStates(WorldPacket& data, uint32& count)
 
 WorldSafeLocsEntry const* BattleGroundEY::GetClosestGraveYard(Player* player)
 {
-    uint32 g_id = 0;
+    uint32 g_id;
 
     switch (player->GetTeam())
     {
         case ALLIANCE: g_id = GRAVEYARD_EY_MAIN_ALLIANCE; break;
         case HORDE:    g_id = GRAVEYARD_EY_MAIN_HORDE;    break;
-        default:       return NULL;
+        default:       return nullptr;
     }
-
-    float distance, nearestDistance;
 
     WorldSafeLocsEntry const* entry = sWorldSafeLocsStore.LookupEntry(g_id);
     WorldSafeLocsEntry const* nearestEntry = entry;
@@ -555,15 +572,15 @@ WorldSafeLocsEntry const* BattleGroundEY::GetClosestGraveYard(Player* player)
     if (!entry)
     {
         sLog.outError("BattleGroundEY: Not found the main team graveyard. Graveyard system isn't working!");
-        return NULL;
+        return nullptr;
     }
 
     float plr_x = player->GetPositionX();
     float plr_y = player->GetPositionY();
     float plr_z = player->GetPositionZ();
 
-    distance = (entry->x - plr_x) * (entry->x - plr_x) + (entry->y - plr_y) * (entry->y - plr_y) + (entry->z - plr_z) * (entry->z - plr_z);
-    nearestDistance = distance;
+    float distance = (entry->x - plr_x) * (entry->x - plr_x) + (entry->y - plr_y) * (entry->y - plr_y) + (entry->z - plr_z) * (entry->z - plr_z);
+    float nearestDistance = distance;
 
     for (uint8 i = 0; i < EY_NODES_MAX; ++i)
     {
@@ -589,9 +606,23 @@ WorldSafeLocsEntry const* BattleGroundEY::GetClosestGraveYard(Player* player)
 
 bool BattleGroundEY::IsAllNodesControlledByTeam(Team team) const
 {
-    for (uint8 i = 0; i < EY_NODES_MAX; ++i)
-        if (m_towerOwner[i] != team)
+    for (auto i : m_towerOwner)
+        if (i != team)
             return false;
 
     return true;
+}
+
+Team BattleGroundEY::GetPrematureWinner()
+{
+    int32 hordeScore = m_TeamScores[TEAM_INDEX_HORDE];
+    int32 allianceScore = m_TeamScores[TEAM_INDEX_ALLIANCE];
+
+    if (hordeScore > allianceScore)
+        return HORDE;
+    if (allianceScore > hordeScore)
+        return ALLIANCE;
+
+    // If the values are equal, fall back to number of players on each team
+    return BattleGround::GetPrematureWinner();
 }

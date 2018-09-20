@@ -1,7 +1,10 @@
 #ifndef _WHEATYEXCEPTIONREPORT_
 #define _WHEATYEXCEPTIONREPORT_
 
+#pragma warning(push)
+#pragma warning(disable:4091)
 #include <dbghelp.h>
+#pragma warning(pop)
 
 #if _MSC_VER < 1400
 #   define countof(array)   (sizeof(array) / sizeof(array[0]))
@@ -98,7 +101,7 @@ class WheatyExceptionReport
 
         static bool FormatSymbolValue(PSYMBOL_INFO, STACKFRAME*, char* pszBuffer, unsigned cbBuffer);
 
-        static char* DumpTypeIndex(char*, DWORD64, DWORD, unsigned, DWORD_PTR, bool& , char*);
+        static char* DumpTypeIndex(char*, DWORD64, DWORD, unsigned, DWORD_PTR, bool&, char*);
 
         static char* FormatOutputValue(char* pszCurrBuffer, BasicType basicType, DWORD64 length, PVOID pAddress);
 

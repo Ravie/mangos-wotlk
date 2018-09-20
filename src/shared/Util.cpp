@@ -18,16 +18,22 @@
 
 #include "Util.h"
 #include "Timer.h"
+#include <utf8.h>
+#include "TSS.h"
 
-#include "utf8cpp/utf8.h"
-#include "mersennetwister/MersenneTwister.h"
-#include <ace/TSS_T.h>
-#include <ace/INET_Addr.h>
+#include <boost/asio.hpp>
 
-typedef ACE_TSS<MTRand> MTRandTSS;
-static MTRandTSS mtRand;
+#include <random>
+#include <chrono>
+#include <cstdarg>
 
-static ACE_Time_Value g_SystemTickTime = ACE_OS::gettimeofday();
+std::mt19937* initRand()
+{
+    std::seed_seq seq = { size_t(std::time(nullptr)), size_t(std::clock()) };
+    return new std::mt19937(seq);
+}
+
+static MaNGOS::thread_local_ptr<std::mt19937> mtRand(&initRand);
 
 uint32 WorldTimer::m_iTime = 0;
 uint32 WorldTimer::m_iPrevTime = 0;
@@ -41,7 +47,7 @@ uint32 WorldTimer::tick()
     m_iPrevTime = m_iTime;
 
     // get the new one and don't forget to persist current system time in m_SystemTickTime
-    m_iTime = WorldTimer::getMSTime_internal(true);
+    m_iTime = WorldTimer::getMSTime();
 
     // return tick diff
     return getMSTimeDiff(m_iPrevTime, m_iTime);
@@ -49,79 +55,79 @@ uint32 WorldTimer::tick()
 
 uint32 WorldTimer::getMSTime()
 {
-    return getMSTime_internal();
-}
-
-uint32 WorldTimer::getMSTime_internal(bool /*savetime*/ /*= false*/)
-{
-    // get current time
-    const ACE_Time_Value currTime = ACE_OS::gettimeofday();
-    // calculate time diff between two world ticks
-    // special case: curr_time < old_time - we suppose that our time has not ticked at all
-    // this should be constant value otherwise it is possible that our time can start ticking backwards until next world tick!!!
-    uint64 diff = 0;
-    (currTime - g_SystemTickTime).msec(diff);
-
-    // lets calculate current world time
-    uint32 iRes = uint32(diff % UI64LIT(0x00000000FFFFFFFF));
-    return iRes;
+    static auto const start_time = std::chrono::system_clock::now();
+    return static_cast<uint32>((std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()) - std::chrono::duration_cast<std::chrono::milliseconds>(start_time.time_since_epoch())).count());
 }
 
 //////////////////////////////////////////////////////////////////////////
 int32 irand(int32 min, int32 max)
 {
-    return int32(mtRand->randInt(max - min)) + min;
+    std::uniform_int_distribution<int32> dist(min, max);
+    return dist(*mtRand.get());
 }
 
 uint32 urand(uint32 min, uint32 max)
 {
-    return mtRand->randInt(max - min) + min;
+    std::uniform_int_distribution<uint32> dist(min, max);
+    return dist(*mtRand.get());
 }
 
 float frand(float min, float max)
 {
-    return mtRand->randExc(max - min) + min;
+    std::uniform_real_distribution<double> dist(min, max);
+    return float(dist(*mtRand.get()));
 }
 
-int32 rand32()
+int32 irand()
 {
-    return mtRand->randInt();
+    std::uniform_int_distribution<int32> dist;
+    return dist(*mtRand.get());
 }
 
-double rand_norm(void)
+uint32 urand()
 {
-    return mtRand->randExc();
+    std::uniform_int_distribution<uint32> dist;
+    return dist(*mtRand.get());
 }
 
-float rand_norm_f(void)
+double rand_norm()
 {
-    return (float)mtRand->randExc();
+    std::uniform_real_distribution<double> dist(0, 1.0f);
+    return dist(*mtRand.get());
 }
 
-double rand_chance(void)
+float rand_norm_f()
 {
-    return mtRand->randExc(100.0);
+    std::uniform_real_distribution<float> dist(0, 1.0f);
+    return dist(*mtRand.get());
 }
 
-float rand_chance_f(void)
+double rand_chance()
 {
-    return (float)mtRand->randExc(100.0);
+    std::uniform_real_distribution<double> dist(0, 100.0);
+    return dist(*mtRand.get());
+}
+
+float rand_chance_f()
+{
+    std::uniform_real_distribution<double> dist(0, 100.0);
+    return float(dist(*mtRand.get()));
 }
 
 Tokens StrSplit(const std::string& src, const std::string& sep)
 {
     Tokens r;
     std::string s;
-    for (std::string::const_iterator i = src.begin(); i != src.end(); ++i)
+    for (char i : src)
     {
-        if (sep.find(*i) != std::string::npos)
+        if (sep.find(i) != std::string::npos)
         {
             if (s.length()) r.push_back(s);
-            s = "";
+            s.clear();
         }
         else
         {
-            s += *i;
+            s += i;
         }
     }
     if (s.length()) r.push_back(s);
@@ -205,16 +211,16 @@ uint32 TimeStringToSecs(const std::string& timestring)
     uint32 buffer     = 0;
     uint32 multiplier = 0;
 
-    for (std::string::const_iterator itr = timestring.begin(); itr != timestring.end(); ++itr)
+    for (char itr : timestring)
     {
-        if (isdigit(*itr))
+        if (isdigit(itr))
         {
             buffer *= 10;
-            buffer += (*itr) - '0';
+            buffer += itr - '0';
         }
         else
         {
-            switch (*itr)
+            switch (itr)
             {
                 case 'd': multiplier = DAY;     break;
                 case 'h': multiplier = HOUR;    break;
@@ -268,17 +274,19 @@ bool IsIPAddress(char const* ipaddress)
 
     // Let the big boys do it.
     // Drawback: all valid ip address formats are recognized e.g.: 12.23,121234,0xABCD)
-    return ACE_OS::inet_addr(ipaddress) != INADDR_NONE;
+    boost::system::error_code ec;
+    boost::asio::ip::address::from_string(ipaddress, ec);
+    return ec.value() != 0;
 }
 
 /// create PID file
 uint32 CreatePIDFile(const std::string& filename)
 {
     FILE* pid_file = fopen(filename.c_str(), "w");
-    if (pid_file == NULL)
+    if (pid_file == nullptr)
         return 0;
 
-#ifdef WIN32
+#ifdef _WIN32
     DWORD pid = GetCurrentProcessId();
 #else
     pid_t pid = getpid();
@@ -296,7 +304,7 @@ size_t utf8length(std::string& utf8str)
     {
         return utf8::distance(utf8str.c_str(), utf8str.c_str() + utf8str.size());
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
         return 0;
@@ -318,7 +326,7 @@ void utf8truncate(std::string& utf8str, size_t len)
         char* oend = utf8::utf16to8(wstr.c_str(), wstr.c_str() + wstr.size(), &utf8str[0]);
         utf8str.resize(oend - (&utf8str[0]));               // remove unused tail
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
     }
@@ -341,7 +349,7 @@ bool Utf8toWStr(char const* utf8str, size_t csize, wchar_t* wstr, size_t& wsize)
         utf8::utf8to16(utf8str, utf8str + csize, wstr);
         wstr[len] = L'\0';
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         if (wsize > 0)
             wstr[0] = L'\0';
@@ -362,7 +370,7 @@ bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr)
         if (len)
             utf8::utf8to16(utf8str.c_str(), utf8str.c_str() + utf8str.size(), &wstr[0]);
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         wstr = L"";
         return false;
@@ -382,7 +390,7 @@ bool WStrToUtf8(wchar_t* wstr, size_t size, std::string& utf8str)
         utf8str2.resize(oend - (&utf8str2[0]));             // remove unused tail
         utf8str = utf8str2;
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
         return false;
@@ -391,7 +399,7 @@ bool WStrToUtf8(wchar_t* wstr, size_t size, std::string& utf8str)
     return true;
 }
 
-bool WStrToUtf8(std::wstring wstr, std::string& utf8str)
+bool WStrToUtf8(const std::wstring& wstr, std::string& utf8str)
 {
     try
     {
@@ -402,7 +410,7 @@ bool WStrToUtf8(std::wstring wstr, std::string& utf8str)
         utf8str2.resize(oend - (&utf8str2[0]));             // remove unused tail
         utf8str = utf8str2;
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
         return false;
@@ -413,10 +421,10 @@ bool WStrToUtf8(std::wstring wstr, std::string& utf8str)
 
 typedef wchar_t const* const* wstrlist;
 
-std::wstring GetMainPartOfName(std::wstring wname, uint32 declension)
+std::wstring GetMainPartOfName(const std::wstring& wname, uint32 declension)
 {
     // supported only Cyrillic cases
-    if (wname.size() < 1 || !isCyrillicCharacter(wname[0]) || declension > 5)
+    if (wname.empty() || !isCyrillicCharacter(wname[0]) || declension > 5)
         return wname;
 
     // Important: end length must be <= MAX_INTERNAL_PLAYER_NAME-MAX_PLAYER_NAME (3 currently)
@@ -440,12 +448,12 @@ std::wstring GetMainPartOfName(std::wstring wname, uint32 declension)
 
     static wchar_t const* const dropEnds[6][8] =
     {
-        { &a_End[1],  &o_End[1],    &ya_End[1],   &ie_End[1],  &soft_End[1], &j_End[1],    NULL,       NULL },
-        { &a_End[1],  &ya_End[1],   &yeru_End[1], &i_End[1],   NULL,         NULL,         NULL,       NULL },
-        { &ie_End[1], &u_End[1],    &yu_End[1],   &i_End[1],   NULL,         NULL,         NULL,       NULL },
-        { &u_End[1],  &yu_End[1],   &o_End[1],    &ie_End[1],  &soft_End[1], &ya_End[1],   &a_End[1],  NULL },
-        { &oj_End[1], &io_j_End[1], &ie_j_End[1], &o_m_End[1], &io_m_End[1], &ie_m_End[1], &yu_End[1], NULL },
-        { &ie_End[1], &i_End[1],    NULL,         NULL,        NULL,         NULL,         NULL,       NULL }
+        { &a_End[1],  &o_End[1],    &ya_End[1],   &ie_End[1],  &soft_End[1], &j_End[1],    nullptr,    nullptr },
+        { &a_End[1],  &ya_End[1],   &yeru_End[1], &i_End[1],   nullptr,      nullptr,      nullptr,    nullptr },
+        { &ie_End[1], &u_End[1],    &yu_End[1],   &i_End[1],   nullptr,      nullptr,      nullptr,    nullptr },
+        { &u_End[1],  &yu_End[1],   &o_End[1],    &ie_End[1],  &soft_End[1], &ya_End[1],   &a_End[1],  nullptr },
+        { &oj_End[1], &io_j_End[1], &ie_j_End[1], &o_m_End[1], &io_m_End[1], &ie_m_End[1], &yu_End[1], nullptr },
+        { &ie_End[1], &i_End[1],    nullptr,      nullptr,     nullptr,      nullptr,      nullptr,    nullptr }
     };
 
     for (wchar_t const * const* itr = &dropEnds[declension][0]; *itr; ++itr)
@@ -491,7 +499,7 @@ bool consoleToUtf8(const std::string& conStr, std::string& utf8str)
 #endif
 }
 
-bool Utf8FitTo(const std::string& str, std::wstring search)
+bool Utf8FitTo(const std::string& str, const std::wstring& search)
 {
     std::wstring temp;
 
@@ -501,10 +509,7 @@ bool Utf8FitTo(const std::string& str, std::wstring search)
     // converting to lower case
     wstrToLower(temp);
 
-    if (temp.find(search) == std::wstring::npos)
-        return false;
-
-    return true;
+    return temp.find(search) != std::wstring::npos;
 }
 
 void utf8printf(FILE* out, const char* str, ...)

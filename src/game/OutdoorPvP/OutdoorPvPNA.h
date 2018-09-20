@@ -21,7 +21,6 @@
 
 #include "Common.h"
 #include "OutdoorPvP.h"
-#include "Language.h"
 
 enum
 {
@@ -165,13 +164,13 @@ class OutdoorPvPNA : public OutdoorPvP
         void SendRemoveWorldStates(Player* player) override;
 
         bool HandleEvent(uint32 eventId, GameObject* go) override;
-        void HandleObjectiveComplete(uint32 eventId, const std::list<Player*> &players, Team team) override;
+        void HandleObjectiveComplete(uint32 eventId, const PlayerList& players, Team team) override;
 
         void HandleCreatureCreate(Creature* creature) override;
         void HandleGameObjectCreate(GameObject* go) override;
         void HandleCreatureDeath(Creature* creature) override;
 
-        void HandlePlayerKillInsideArea(Player* player) override;
+        void HandlePlayerKillInsideArea(Player* player, Unit* /*victim*/) override;
         bool HandleGameObjectUse(Player* player, GameObject* go) override;
         void Update(uint32 diff) override;
 

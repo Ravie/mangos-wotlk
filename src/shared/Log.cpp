@@ -27,8 +27,7 @@
 #include <stdarg.h>
 #include <fstream>
 #include <iostream>
-
-#include "ace/OS_NS_unistd.h"
+#include <thread>
 
 INSTANTIATE_SINGLETON_1(Log);
 
@@ -67,8 +66,8 @@ enum LogType
 const int LogType_count = int(LogError) + 1;
 
 Log::Log() :
-    raLogfile(NULL), logfile(NULL), gmLogfile(NULL), charLogfile(NULL),
-    dberLogfile(NULL), eventAiErLogfile(NULL), scriptErrLogFile(NULL), worldLogfile(NULL), m_colored(false), m_includeTime(false), m_gmlog_per_account(false), m_scriptLibName(NULL)
+    raLogfile(nullptr), logfile(nullptr), gmLogfile(nullptr), charLogfile(nullptr), dberLogfile(nullptr),
+    eventAiErLogfile(nullptr), scriptErrLogFile(nullptr), worldLogfile(nullptr), customLogFile(nullptr), m_colored(false), m_includeTime(false), m_gmlog_per_account(false), m_scriptLibName(nullptr)
 {
     Initialize();
 }
@@ -85,14 +84,14 @@ void Log::InitColors(const std::string& str)
 
     std::istringstream ss(str);
 
-    for (int i = 0; i < LogType_count; ++i)
+    for (int& i : color)
     {
-        ss >> color[i];
+        ss >> i;
 
         if (!ss)
             return;
 
-        if (color[i] < 0 || color[i] >= Color_count)
+        if (i < 0 || i >= Color_count)
             return;
     }
 
@@ -219,7 +218,7 @@ void Log::SetLogFileLevel(char* level)
 void Log::Initialize()
 {
     /// Common log files data
-    m_logsDir = sConfig.GetStringDefault("LogsDir", "");
+    m_logsDir = sConfig.GetStringDefault("LogsDir");
     if (!m_logsDir.empty())
     {
         if ((m_logsDir.at(m_logsDir.length() - 1) != '/') && (m_logsDir.at(m_logsDir.length() - 1) != '\\'))
@@ -237,13 +236,13 @@ void Log::Initialize()
     else
     {
         // GM log settings for per account case
-        m_gmlog_filename_format = sConfig.GetStringDefault("GMLogFile", "");
+        m_gmlog_filename_format = sConfig.GetStringDefault("GMLogFile");
         if (!m_gmlog_filename_format.empty())
         {
             bool m_gmlog_timestamp = sConfig.GetBoolDefault("GmLogTimestamp", false);
 
-            size_t dot_pos = m_gmlog_filename_format.find_last_of(".");
-            if (dot_pos != m_gmlog_filename_format.npos)
+            size_t dot_pos = m_gmlog_filename_format.find_last_of('.');
+            if (dot_pos != std::string::npos)
             {
                 if (m_gmlog_timestamp)
                     m_gmlog_filename_format.insert(dot_pos, m_logsTimestamp);
@@ -263,16 +262,17 @@ void Log::Initialize()
     }
 
     charLogfile = openLogFile("CharLogFile", "CharLogTimestamp", "a");
-    dberLogfile = openLogFile("DBErrorLogFile", NULL, "a");
-    eventAiErLogfile = openLogFile("EventAIErrorLogFile", NULL, "a");
-    raLogfile = openLogFile("RaLogFile", NULL, "a");
+    dberLogfile = openLogFile("DBErrorLogFile", nullptr, "a");
+    eventAiErLogfile = openLogFile("EventAIErrorLogFile", nullptr, "a");
+    raLogfile = openLogFile("RaLogFile", nullptr, "a");
     worldLogfile = openLogFile("WorldLogFile", "WorldLogTimestamp", "a");
+    customLogFile = openLogFile("CustomLogFile", nullptr, "a");
 
     // Main log file settings
     m_includeTime  = sConfig.GetBoolDefault("LogTime", false);
     m_logLevel     = LogLevel(sConfig.GetIntDefault("LogLevel", 0));
     m_logFileLevel = LogLevel(sConfig.GetIntDefault("LogFileLevel", 0));
-    InitColors(sConfig.GetStringDefault("LogColors", ""));
+    InitColors(sConfig.GetStringDefault("LogColors"));
 
     m_logFilter = 0;
     for (int i = 0; i < LOG_FILTER_COUNT; ++i)
@@ -286,14 +286,14 @@ void Log::Initialize()
 
 FILE* Log::openLogFile(char const* configFileName, char const* configTimeStampFlag, char const* mode)
 {
-    std::string logfn = sConfig.GetStringDefault(configFileName, "");
+    std::string logfn = sConfig.GetStringDefault(configFileName);
     if (logfn.empty())
-        return NULL;
+        return nullptr;
 
     if (configTimeStampFlag && sConfig.GetBoolDefault(configTimeStampFlag, false))
     {
-        size_t dot_pos = logfn.find_last_of(".");
-        if (dot_pos != logfn.npos)
+        size_t dot_pos = logfn.find_last_of('.');
+        if (dot_pos != std::string::npos)
             logfn.insert(dot_pos, m_logsTimestamp);
         else
             logfn += m_logsTimestamp;
@@ -305,7 +305,7 @@ FILE* Log::openLogFile(char const* configFileName, char const* configTimeStampFl
 FILE* Log::openGmlogPerAccount(uint32 account)
 {
     if (m_gmlog_filename_format.empty())
-        return NULL;
+        return nullptr;
 
     char namebuf[MANGOS_PATH_MAX];
     snprintf(namebuf, MANGOS_PATH_MAX, m_gmlog_filename_format.c_str(), account);
@@ -314,7 +314,7 @@ FILE* Log::openGmlogPerAccount(uint32 account)
 
 void Log::outTimestamp(FILE* file)
 {
-    time_t t = time(NULL);
+    time_t t = time(nullptr);
     tm* aTm = localtime(&t);
     //       YYYY   year
     //       MM     month (2 digits 01-12)
@@ -325,9 +325,9 @@ void Log::outTimestamp(FILE* file)
     fprintf(file, "%-4d-%02d-%02d %02d:%02d:%02d ", aTm->tm_year + 1900, aTm->tm_mon + 1, aTm->tm_mday, aTm->tm_hour, aTm->tm_min, aTm->tm_sec);
 }
 
-void Log::outTime()
+void Log::outTime() const
 {
-    time_t t = time(NULL);
+    time_t t = time(nullptr);
     tm* aTm = localtime(&t);
     //       YYYY   year
     //       MM     month (2 digits 01-12)
@@ -340,7 +340,7 @@ void Log::outTime()
 
 std::string Log::GetTimestampStr()
 {
-    time_t t = time(NULL);
+    time_t t = time(nullptr);
     tm* aTm = localtime(&t);
     //       YYYY   year
     //       MM     month (2 digits 01-12)
@@ -355,6 +355,7 @@ std::string Log::GetTimestampStr()
 
 void Log::outString()
 {
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_includeTime)
         outTime();
     printf("\n");
@@ -372,6 +373,8 @@ void Log::outString(const char* str, ...)
 {
     if (!str)
         return;
+
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
 
     if (m_colored)
         SetColor(true, m_colors[LogNormal]);
@@ -410,6 +413,8 @@ void Log::outError(const char* err, ...)
     if (!err)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
+
     if (m_colored)
         SetColor(false, m_colors[LogError]);
 
@@ -444,6 +449,8 @@ void Log::outError(const char* err, ...)
 
 void Log::outErrorDb()
 {
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
+
     if (m_includeTime)
         outTime();
 
@@ -470,6 +477,8 @@ void Log::outErrorDb(const char* err, ...)
 {
     if (!err)
         return;
+
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
 
     if (m_colored)
         SetColor(false, m_colors[LogError]);
@@ -519,6 +528,8 @@ void Log::outErrorDb(const char* err, ...)
 
 void Log::outErrorEventAI()
 {
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
+
     if (m_includeTime)
         outTime();
 
@@ -546,6 +557,7 @@ void Log::outErrorEventAI(const char* err, ...)
     if (!err)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_colored)
         SetColor(false, m_colors[LogError]);
 
@@ -597,6 +609,7 @@ void Log::outBasic(const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_logLevel >= LOG_LVL_BASIC)
     {
         if (m_colored)
@@ -635,6 +648,7 @@ void Log::outDetail(const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_logLevel >= LOG_LVL_DETAIL)
     {
         if (m_colored)
@@ -675,6 +689,7 @@ void Log::outDebug(const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_logLevel >= LOG_LVL_DEBUG)
     {
         if (m_colored)
@@ -715,6 +730,7 @@ void Log::outCommand(uint32 account, const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_logLevel >= LOG_LVL_DETAIL)
     {
         if (m_colored)
@@ -777,6 +793,7 @@ void Log::outChar(const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (charLogfile)
     {
         va_list ap;
@@ -791,6 +808,7 @@ void Log::outChar(const char* str, ...)
 
 void Log::outErrorScriptLib()
 {
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_includeTime)
         outTime();
 
@@ -821,6 +839,7 @@ void Log::outErrorScriptLib(const char* err, ...)
     if (!err)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (m_colored)
         SetColor(false, m_colors[LogError]);
 
@@ -870,24 +889,24 @@ void Log::outErrorScriptLib(const char* err, ...)
     fflush(stderr);
 }
 
-void Log::outWorldPacketDump(uint32 socket, uint32 opcode, char const* opcodeName, ByteBuffer const* packet, bool incoming)
+void Log::outWorldPacketDump(const char* socket, uint32 opcode, char const* opcodeName, ByteBuffer const& packet, bool incoming)
 {
     if (!worldLogfile)
         return;
 
-    ACE_GUARD(ACE_Thread_Mutex, GuardObj, m_worldLogMtx);
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
 
     outTimestamp(worldLogfile);
 
-    fprintf(worldLogfile, "\n%s:\nSOCKET: %u\nLENGTH: " SIZEFMTD "\nOPCODE: %s (0x%.4X)\nDATA:\n",
+    fprintf(worldLogfile, "\n%s:\nSOCKET: %s\nLENGTH: %u\nOPCODE: %s (0x%.4X)\nDATA:\n",
             incoming ? "CLIENT" : "SERVER",
-            socket, packet->size(), opcodeName, opcode);
+            socket, static_cast<uint32>(packet.size()), opcodeName, opcode);
 
     size_t p = 0;
-    while (p < packet->size())
+    while (p < packet.size())
     {
-        for (size_t j = 0; j < 16 && p < packet->size(); ++j)
-            fprintf(worldLogfile, "%.2X ", (*packet)[p++]);
+        for (size_t j = 0; j < 16 && p < packet.size(); ++j)
+            fprintf(worldLogfile, "%.2X ", packet[p++]);
 
         fprintf(worldLogfile, "\n");
     }
@@ -898,6 +917,8 @@ void Log::outWorldPacketDump(uint32 socket, uint32 opcode, char const* opcodeNam
 
 void Log::outCharDump(const char* str, uint32 account_id, uint32 guid, const char* name)
 {
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
+
     if (charLogfile)
     {
         fprintf(charLogfile, "== START DUMP == (account: %u guid: %u name: %s )\n%s\n== END DUMP ==\n", account_id, guid, name, str);
@@ -910,6 +931,7 @@ void Log::outRALog(const char* str, ...)
     if (!str)
         return;
 
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
     if (raLogfile)
     {
         va_list ap;
@@ -919,6 +941,26 @@ void Log::outRALog(const char* str, ...)
         fprintf(raLogfile, "\n");
         va_end(ap);
         fflush(raLogfile);
+    }
+
+    fflush(stdout);
+}
+
+void Log::outCustomLog(const char* str, ...)
+{
+    if (!str)
+        return;
+
+    std::lock_guard<std::mutex> guard(m_worldLogMtx);
+    if (customLogFile)
+    {
+        va_list ap;
+        outTimestamp(customLogFile);
+        va_start(ap, str);
+        vfprintf(customLogFile, str, ap);
+        fprintf(customLogFile, "\n");
+        va_end(ap);
+        fflush(customLogFile);
     }
 
     fflush(stdout);
@@ -942,7 +984,7 @@ void Log::WaitBeforeContinueIfNeed()
         for (int i = 0; i < mode; ++i)
         {
             bar.step();
-            ACE_OS::sleep(1);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
 }
@@ -956,13 +998,18 @@ void Log::setScriptLibraryErrorFile(char const* fname, char const* libName)
 
     if (!fname)
     {
-        scriptErrLogFile = NULL;
+        scriptErrLogFile = nullptr;
         return;
     }
 
     std::string fileName = m_logsDir;
     fileName.append(fname);
     scriptErrLogFile = fopen(fileName.c_str(), "a");
+}
+
+void outstring_log()
+{
+    sLog.outString();
 }
 
 void outstring_log(const char* str, ...)

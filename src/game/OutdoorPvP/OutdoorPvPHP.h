@@ -21,7 +21,7 @@
 
 #include "Common.h"
 #include "OutdoorPvP.h"
-#include "Language.h"
+#include "Tools/Language.h"
 
 enum
 {
@@ -39,7 +39,7 @@ enum
     NPC_CAPTURE_CREDIT_BROKEN_HILL          = 19032,
 
     // misc
-    HONOR_REWARD_HELLFIRE                   = 18,
+    HONOR_REWARD_HELLFIRE                   = 10, // pre 2.0.6 is 18
 
     // gameobjects
     GO_TOWER_BANNER_OVERLOOK                = 182525,
@@ -156,10 +156,10 @@ class OutdoorPvPHP : public OutdoorPvP
         void SendRemoveWorldStates(Player* player) override;
 
         bool HandleEvent(uint32 eventId, GameObject* go) override;
-        void HandleObjectiveComplete(uint32 eventId, const std::list<Player*> &players, Team team) override;
+        void HandleObjectiveComplete(uint32 eventId, const PlayerList& players, Team team) override;
 
         void HandleGameObjectCreate(GameObject* go) override;
-        void HandlePlayerKillInsideArea(Player* player) override;
+        void HandlePlayerKillInsideArea(Player* player, Unit* /*victim*/) override;
 
     private:
         // process capture events

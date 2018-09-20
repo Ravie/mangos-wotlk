@@ -41,7 +41,6 @@ set(SRC_GRP_PLATFORM
 
 set(SRC_GRP_POLICIES
     Policies/CreationPolicy.h
-    Policies/MemoryManagement.cpp
     Policies/ObjectLifeTime.cpp
     Policies/ObjectLifeTime.h
     Policies/Singleton.h
@@ -55,7 +54,6 @@ set(SRC_GRP_UTIL
     Utilities/EventProcessor.h
     Utilities/LinkedList.h
     Utilities/TypeList.h
-    Utilities/UnorderedMapSet.h
 )
 
 set(SRC_GRP_LINKED_REFERENCE
@@ -102,22 +100,10 @@ source_group("Utilities\\LinkedReference"
     ${SRC_GRP_LINKED_REFERENCE}
 )
 
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${ACE_INCLUDE_DIR}
-)
-
 add_library(${LIBRARY_NAME} STATIC
   ${LIBRARY_SRCS}
 )
 
-if(NOT TBB_USE_EXTERNAL)
-  add_dependencies(${LIBRARY_NAME} TBB_Project)
-endif()
-if(NOT ACE_USE_EXTERNAL)
-  add_dependencies(${LIBRARY_NAME} ACE_Project)
-endif()
-
-target_link_libraries(${LIBRARY_NAME}
-  ${TBB_LIBRARIES}
+target_include_directories(${LIBRARY_NAME}
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )

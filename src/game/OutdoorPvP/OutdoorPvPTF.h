@@ -21,7 +21,7 @@
 
 #include "Common.h"
 #include "OutdoorPvP.h"
-#include "Language.h"
+#include "Tools/Language.h"
 
 enum
 {
@@ -155,7 +155,7 @@ static const uint32 terokkarTowers[MAX_TF_TOWERS] = {GO_TOWER_BANNER_WEST, GO_TO
 
 class OutdoorPvPTF : public OutdoorPvP
 {
-    friend class OutdoorPvPMgr;
+        friend class OutdoorPvPMgr;
 
     public:
         OutdoorPvPTF();
@@ -166,13 +166,14 @@ class OutdoorPvPTF : public OutdoorPvP
         void SendRemoveWorldStates(Player* player) override;
 
         bool HandleEvent(uint32 eventId, GameObject* go) override;
-        void HandleObjectiveComplete(uint32 eventId, const std::list<Player*> &players, Team team) override;
+        void HandleObjectiveComplete(uint32 eventId, const PlayerList& players, Team team) override;
 
         void HandleGameObjectCreate(GameObject* go) override;
         void Update(uint32 diff) override;
 
     private:
         void UpdateTimerWorldState();
+        void CalculateTimerWorldStateValues(uint32& firstDigit, uint32& secondDigit, uint32& hoursLeft);
 
         // process capture events
         bool ProcessCaptureEvent(GameObject* go, uint32 towerId, Team team, uint32 newWorldState);

@@ -89,22 +89,30 @@ bool SqlQuery::Execute(SqlConnection* conn)
 
     LOCK_DB_CONN(conn);
     /// execute the query and store the result in the callback
-    m_callback->SetResult(conn->Query(m_sql));
+    m_callback->SetResult(conn->Query(&m_sql[0]));
     /// add the callback to the sql result queue of the thread it originated from
-    m_queue->add(m_callback);
+    m_queue->Add(m_callback);
 
     return true;
 }
 
 void SqlResultQueue::Update()
 {
+    std::lock_guard<std::mutex> guard(m_mutex);
+
     /// execute the callbacks waiting in the synchronization queue
-    MaNGOS::IQueryCallback* callback = NULL;
-    while (next(callback))
+    while (!m_queue.empty())
     {
+        auto const callback = std::move(m_queue.front());
+        m_queue.pop();
         callback->Execute();
-        delete callback;
     }
+}
+
+void SqlResultQueue::Add(MaNGOS::IQueryCallback* callback)
+{
+    std::lock_guard<std::mutex> guard(m_mutex);
+    m_queue.push(std::unique_ptr<MaNGOS::IQueryCallback>(callback));
 }
 
 bool SqlQueryHolder::Execute(MaNGOS::IQueryCallback* callback, SqlDelayThread* thread, SqlResultQueue* queue)
@@ -127,7 +135,7 @@ bool SqlQueryHolder::SetQuery(size_t index, const char* sql)
         return false;
     }
 
-    if (m_queries[index].first != NULL)
+    if (m_queries[index].first != nullptr)
     {
         sLog.outError("Attempt assign query to holder index (" SIZEFMTD ") where other query stored (Old: [%s] New: [%s])",
                       index, m_queries[index].first, sql);
@@ -135,7 +143,7 @@ bool SqlQueryHolder::SetQuery(size_t index, const char* sql)
     }
 
     /// not executed yet, just stored (it's not called a holder for nothing)
-    m_queries[index] = SqlResultPair(mangos_strdup(sql), (QueryResult*)NULL);
+    m_queries[index] = SqlResultPair(mangos_strdup(sql), (QueryResult*)nullptr);
     return true;
 }
 
@@ -167,16 +175,15 @@ QueryResult* SqlQueryHolder::GetResult(size_t index)
     if (index < m_queries.size())
     {
         /// the query strings are freed on the first GetResult or in the destructor
-        if (m_queries[index].first != NULL)
+        if (m_queries[index].first != nullptr)
         {
             delete[](const_cast<char*>(m_queries[index].first));
-            m_queries[index].first = NULL;
+            m_queries[index].first = nullptr;
         }
         /// when you get a result aways remember to delete it!
         return m_queries[index].second;
     }
-    else
-        return NULL;
+    return nullptr;
 }
 
 void SqlQueryHolder::SetResult(size_t index, QueryResult* result)
@@ -188,14 +195,14 @@ void SqlQueryHolder::SetResult(size_t index, QueryResult* result)
 
 SqlQueryHolder::~SqlQueryHolder()
 {
-    for (size_t i = 0; i < m_queries.size(); ++i)
+    for (auto& m_querie : m_queries)
     {
         /// if the result was never used, free the resources
         /// results used already (getresult called) are expected to be deleted
-        if (m_queries[i].first != NULL)
+        if (m_querie.first != nullptr)
         {
-            delete[](const_cast<char*>(m_queries[i].first));
-            delete m_queries[i].second;
+            delete[](const_cast<char*>(m_querie.first));
+            delete m_querie.second;
         }
     }
 }
@@ -222,7 +229,7 @@ bool SqlQueryHolderEx::Execute(SqlConnection* conn)
     }
 
     /// sync with the caller thread
-    m_queue->add(m_callback);
+    m_queue->Add(m_callback);
 
     return true;
 }

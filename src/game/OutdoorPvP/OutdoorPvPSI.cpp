@@ -18,12 +18,13 @@
 
 #include "OutdoorPvPSI.h"
 #include "WorldPacket.h"
-#include "World.h"
-#include "ObjectMgr.h"
-#include "Object.h"
-#include "Creature.h"
-#include "GameObject.h"
-#include "Player.h"
+#include "World/World.h"
+#include "Globals/ObjectMgr.h"
+#include "Entities/Object.h"
+#include "Entities/Creature.h"
+#include "Entities/GameObject.h"
+#include "Entities/Player.h"
+#include "Tools/Language.h"
 
 OutdoorPvPSI::OutdoorPvPSI() : OutdoorPvP(),
     m_resourcesAlliance(0),
@@ -50,7 +51,7 @@ void OutdoorPvPSI::HandlePlayerEnterZone(Player* player, bool isMainZone)
 
     // buff the player if same team is controlling the zone
     if (player->GetTeam() == m_zoneOwner)
-        player->CastSpell(player, SPELL_CENARION_FAVOR, true);
+        player->CastSpell(player, SPELL_CENARION_FAVOR, TRIGGERED_OLD_TRIGGERED);
 }
 
 // Remove buffs when player leaves zone
@@ -138,8 +139,8 @@ bool OutdoorPvPSI::HandleAreaTrigger(Player* player, uint32 triggerId)
     player->RemoveAurasDueToSpell(SPELL_SILITHYST);
 
     // reward the player
-    player->CastSpell(player, SPELL_TRACES_OF_SILITHYST, true);
-    player->RewardHonor(NULL, 1, HONOR_REWARD_SILITHYST);
+    player->CastSpell(player, SPELL_TRACES_OF_SILITHYST, TRIGGERED_OLD_TRIGGERED);
+    player->RewardHonor(nullptr, 1, HONOR_REWARD_SILITHYST);
     player->GetReputationMgr().ModifyReputation(sFactionStore.LookupEntry(FACTION_CENARION_CIRCLE), REPUTATION_REWARD_SILITHYST);
 
     return true;
@@ -180,7 +181,7 @@ bool OutdoorPvPSI::HandleDropFlag(Player* player, uint32 spellId)
     }
 
     // drop the flag in other case
-    player->CastSpell(player, SPELL_SILITHYST_FLAG_DROP, true);
+    player->CastSpell(player, SPELL_SILITHYST_FLAG_DROP, TRIGGERED_OLD_TRIGGERED);
     return true;
 }
 
@@ -191,9 +192,8 @@ bool OutdoorPvPSI::HandleGameObjectUse(Player* player, GameObject* go)
     if (go->GetEntry() == GO_SILITHYST_MOUND || go->GetEntry() == GO_SILITHYST_GEYSER)
     {
         // Also mark player with pvp on
-        player->CastSpell(player, SPELL_SILITHYST, true);
-        player->UpdatePvP(true, true);
-        player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_IN_PVP);
+        player->CastSpell(player, SPELL_SILITHYST, TRIGGERED_OLD_TRIGGERED);
+        player->UpdatePvP(true);
         // Despawn the gameobject (workaround)
         go->SetLootState(GO_JUST_DEACTIVATED);
         return true;

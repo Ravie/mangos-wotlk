@@ -30,6 +30,8 @@ set(SRC_GRP_AUTH
     Auth/SARC4.h
     Auth/Sha1.cpp
     Auth/Sha1.h
+    Auth/base32.cpp
+    Auth/base32.h
 )
 
 set(SRC_GRP_CONFIG
@@ -76,11 +78,19 @@ set(SRC_GRP_LOG
     Log.h
 )
 
+set(SRC_GRP_NETWORK
+    Network/PacketBuffer.cpp
+    Network/Socket.cpp
+    Network/Listener.hpp
+    Network/NetworkThread.hpp
+    Network/PacketBuffer.hpp
+    Network/Socket.hpp
+)
+
 set(SRC_GRP_UTIL
     ByteBuffer.cpp
     ByteBuffer.h
     Errors.h
-    # dep/include/mersennetwister/MersenneTwister.h is part of this group in the VC 2012 file but it is not part of src/shared, so it is omitted here
     ProgressBar.cpp
     ProgressBar.h
     Timer.h
@@ -89,7 +99,6 @@ set(SRC_GRP_UTIL
     WorldPacket.h
 )
 
-
 set(LIBRARY_SRCS
     ${SRC_GRP_AUTH}
     ${SRC_GRP_CONFIG}
@@ -97,16 +106,14 @@ set(LIBRARY_SRCS
     ${SRC_GRP_DATABASE_DBC}
     ${SRC_GRP_LOG}
     ${SRC_GRP_UTIL}
+    ${SRC_GRP_NETWORK}
     Common.cpp
     Common.h
-    LockedQueue.h
-    revision_nr.h
     revision_sql.h
-    SystemConfig.h
+    revision.h
     Threading.cpp
     Threading.h
 )
-
 
 source_group("Auth"
   FILES
@@ -142,11 +149,16 @@ source_group("Util"
 if(WIN32)
   set(LIBRARY_SRCS
       ${LIBRARY_SRCS}
-      WheatyExceptionReport.cpp
-      WheatyExceptionReport.h
       ServiceWin32.cpp
       ServiceWin32.h
      )
+  if(MSVC)
+    set(LIBRARY_SRCS
+      ${LIBRARY_SRCS}
+      WheatyExceptionReport.cpp
+      WheatyExceptionReport.h
+     )
+  endif()
 else()
   set(LIBRARY_SRCS
       ${LIBRARY_SRCS}
@@ -155,31 +167,48 @@ else()
      )
 endif()
 
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/dep/include
-  ${CMAKE_SOURCE_DIR}/src/framework
-  ${CMAKE_BINARY_DIR}
-  ${ACE_INCLUDE_DIR}
+# include external dependencies without warnings
+include_directories(SYSTEM
+  ${OPENSSL_INCLUDE_DIR}
 )
 
-if(POSTGRESQL)
-  include_directories(${PostgreSQL_INCLUDE_DIRS})
-else()
-  include_directories(${MYSQL_INCLUDE_DIR})
-endif()
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_BINARY_DIR}
+)
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/SystemConfig.h.in ${CMAKE_CURRENT_BINARY_DIR}/SystemConfig.h)
+if(POSTGRESQL AND POSTGRESQL_FOUND AND NOT WIN32)
+  include_directories(SYSTEM ${PostgreSQL_INCLUDE_DIRS})
+else()
+  include_directories(SYSTEM ${MYSQL_INCLUDE_DIR})
+endif()
 
 add_library(${LIBRARY_NAME} STATIC
   ${LIBRARY_SRCS}
 )
 
-if(POSTGRESQL)
-  target_link_libraries(${LIBRARY_NAME} ${PostgreSQL_LIBRARIES})
+target_link_libraries(${LIBRARY_NAME}
+  PUBLIC framework
+  PUBLIC utf8cpp
+  PUBLIC ${OPENSSL_LIBRARIES}
+)
+
+target_include_directories(${LIBRARY_NAME}
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC ${OPENSSL_INCLUDE_DIR}
+  PRIVATE ${Boost_INCLUDE_DIRS}
+)
+
+if(POSTGRESQL AND POSTGRESQL_FOUND AND NOT WIN32)
+  target_include_directories(${LIBRARY_NAME} PUBLIC ${PostgreSQL_INCLUDE_DIRS})
+else()
+  target_include_directories(${LIBRARY_NAME} PUBLIC ${MYSQL_INCLUDE_DIR})
 endif()
 
-add_dependencies(${LIBRARY_NAME} revision.h)
-if(NOT ACE_USE_EXTERNAL)
-  add_dependencies(${LIBRARY_NAME} ACE_Project)
+# Mark the revision header as being generated.
+set_source_files_properties(${CMAKE_SOURCE_DIR}/src/shared/revision.h
+  PROPERTIES GENERATED TRUE
+             HEADER_FILE_ONLY TRUE)
+if(MSVC)
+  set_target_properties(${LIBRARY_NAME} PROPERTIES PROJECT_LABEL "Shared")
 endif()
